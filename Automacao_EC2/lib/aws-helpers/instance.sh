@@ -75,3 +75,159 @@ obter_ip_publico_instancia() {
     echo "" >&2
     return 1
 }
+
+# Função para listar instâncias EC2
+listar_instancias_ec2() {
+    echo "" >&2
+    echo "═══════════════════════════════════════════════════════════════════════════════" >&2
+    echo "                         INSTÂNCIAS EC2 DISPONÍVEIS" >&2
+    echo "═══════════════════════════════════════════════════════════════════════════════" >&2
+    echo "" >&2
+    
+    # Obter lista de instâncias
+    local instancias=$(aws ec2 describe-instances \
+        --query 'Reservations[*].Instances[*].[InstanceId,State.Name,InstanceType,Tags[?Key==`Name`].Value|[0]]' \
+        --output text 2>/dev/null)
+    
+    if [ -z "$instancias" ]; then
+        msg_aviso "Nenhuma instância EC2 encontrada na região configurada."
+        echo "" >&2
+        echo "═══════════════════════════════════════════════════════════════════════════════" >&2
+        echo "" >&2
+        return 1
+    fi
+    
+    # Exibir em formato de tabela
+    echo "$instancias" | awk 'BEGIN {
+        printf "%-4s %-25s %-20s %-15s %-30s\n", "Nº", "INSTANCE ID", "STATUS", "TIPO", "NOME" | "cat >&2"
+        printf "%-4s %-25s %-20s %-15s %-30s\n", "----", "-------------------------", "--------------------", "---------------", "------------------------------" | "cat >&2"
+    }
+    {
+        nome = ($4 != "" && $4 != "None") ? $4 : "Sem nome"
+        printf "%-4d %-25s %-20s %-15s %-30s\n", NR, $1, $2, $3, nome | "cat >&2"
+    }'
+    
+    echo "" >&2
+    echo "═══════════════════════════════════════════════════════════════════════════════" >&2
+    echo "" >&2
+    
+    return 0
+}
+
+# Função para obter Instance ID por índice
+obter_instance_id_por_indice() {
+    local indice="$1"
+    
+    local instance_id=$(aws ec2 describe-instances \
+        --query 'Reservations[*].Instances[*].[InstanceId]' \
+        --output text | sed -n "${indice}p")
+    
+    echo "$instance_id"
+}
+
+# Função para obter informações detalhadas da instância
+obter_info_instancia() {
+    local instance_id="$1"
+    
+    aws ec2 describe-instances \
+        --instance-ids "$instance_id" \
+        --query 'Reservations[0].Instances[0].[InstanceId,State.Name,InstanceType,PublicIpAddress,PrivateIpAddress,KeyName,SecurityGroups[0].GroupId,SubnetId,Tags[?Key==`Name`].Value|[0]]' \
+        --output text 2>/dev/null
+}
+
+# Função para exibir detalhes da instância
+exibir_detalhes_instancia() {
+    local instance_id="$1"
+    
+    echo "" >&2
+    echo "═══════════════════════════════════════════════════════════════════════════════" >&2
+    echo "                         DETALHES DA INSTÂNCIA" >&2
+    echo "═══════════════════════════════════════════════════════════════════════════════" >&2
+    echo "" >&2
+    
+    local info=$(obter_info_instancia "$instance_id")
+    
+    if [ -z "$info" ]; then
+        msg_erro "Não foi possível obter informações da instância."
+        return 1
+    fi
+    
+    local instance_id=$(echo "$info" | awk '{print $1}')
+    local status=$(echo "$info" | awk '{print $2}')
+    local tipo=$(echo "$info" | awk '{print $3}')
+    local ip_publico=$(echo "$info" | awk '{print $4}')
+    local ip_privado=$(echo "$info" | awk '{print $5}')
+    local key_name=$(echo "$info" | awk '{print $6}')
+    local sg_id=$(echo "$info" | awk '{print $7}')
+    local subnet_id=$(echo "$info" | awk '{print $8}')
+    local nome=$(echo "$info" | awk '{print $9}')
+    
+    [ "$nome" == "None" ] && nome="Sem nome"
+    [ "$ip_publico" == "None" ] && ip_publico="N/A"
+    [ "$ip_privado" == "None" ] && ip_privado="N/A"
+    [ "$key_name" == "None" ] && key_name="N/A"
+    [ "$sg_id" == "None" ] && sg_id="N/A"
+    
+    echo "  Instance ID:        $instance_id" >&2
+    echo "  Nome:               $nome" >&2
+    echo "  Status:             $status" >&2
+    echo "  Tipo:               $tipo" >&2
+    echo "  IP Público:         $ip_publico" >&2
+    echo "  IP Privado:         $ip_privado" >&2
+    echo "  Key Pair:           $key_name" >&2
+    echo "  Security Group:     $sg_id" >&2
+    echo "  Subnet ID:          $subnet_id" >&2
+    echo "" >&2
+    echo "═══════════════════════════════════════════════════════════════════════════════" >&2
+    echo "" >&2
+}
+
+# Função para encerrar instância EC2
+encerrar_instancia() {
+    local instance_id="$1"
+    
+    msg_info "Encerrando instância $instance_id..."
+    echo "" >&2
+    pausar 2
+    
+    # Executar comando de término
+    aws ec2 terminate-instances --instance-ids "$instance_id" > /dev/null 2>&1
+    
+    if [ $? -eq 0 ]; then
+        msg_sucesso "Instância $instance_id foi marcada para encerramento!"
+        echo "" >&2
+        msg_info "A instância será encerrada em alguns instantes."
+        msg_info "Volumes EBS associados serão excluídos automaticamente (se configurados)."
+        echo "" >&2
+        return 0
+    else
+        msg_erro "Falha ao encerrar a instância $instance_id"
+        echo "" >&2
+        return 1
+    fi
+}
+
+# Função para parar instância (sem encerrar)
+parar_instancia() {
+    local instance_id="$1"
+    
+    msg_info "Parando instância $instance_id..."
+    echo "" >&2
+    pausar 2
+    
+    aws ec2 stop-instances --instance-ids "$instance_id" > /dev/null 2>&1
+    
+    if [ $? -eq 0 ]; then
+        msg_sucesso "Instância $instance_id foi parada com sucesso!"
+        echo "" >&2
+        msg_info "A instância pode ser reiniciada posteriormente."
+        msg_info "Você não será cobrado por uso de instância enquanto ela estiver parada."
+        msg_aviso "Você ainda será cobrado pelo armazenamento EBS."
+        echo "" >&2
+        return 0
+    else
+        msg_erro "Falha ao parar a instância $instance_id"
+        echo "" >&2
+        return 1
+    fi
+}

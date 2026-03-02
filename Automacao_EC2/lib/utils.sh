@@ -54,3 +54,21 @@ titulo_etapa() {
     local titulo="$2"
     echo "Etapa $numero: $titulo" >&2
 }
+
+# Função para confirmar ação destrutiva
+confirmar_acao() {
+    local mensagem="$1"
+    
+    echo "" >&2
+    msg_aviso "$mensagem"
+    echo "" >&2
+    read -p "Digite 'CONFIRMAR' para prosseguir ou qualquer outra coisa para cancelar: " confirmacao >&2
+    echo "" >&2
+    
+    if [ "$confirmacao" == "CONFIRMAR" ]; then
+        return 0
+    else
+        msg_info "Operação cancelada pelo usuário."
+        return 1
+    fi
+}
