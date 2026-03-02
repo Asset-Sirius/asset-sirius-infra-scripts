@@ -73,6 +73,45 @@ criar_par_chaves_aws() {
     fi
 }
 
+# Função para listar pares de chaves existentes na AWS
+listar_pares_chaves_aws() {
+    echo "" >&2
+    echo "═══════════════════════════════════════════════════════════════════════════════" >&2
+    echo "                      PARES DE CHAVES DISPONÍVEIS NA AWS" >&2
+    echo "═══════════════════════════════════════════════════════════════════════════════" >&2
+    echo "" >&2
+    
+    # Obter lista de pares de chaves da AWS
+    local chaves_aws=$(aws ec2 describe-key-pairs \
+        --query 'KeyPairs[*].KeyName' \
+        --output text 2>/dev/null)
+    
+    if [ -z "$chaves_aws" ]; then
+        echo "  [INFO] Nenhum par de chaves encontrado na AWS." >&2
+        echo "" >&2
+        echo "═══════════════════════════════════════════════════════════════════════════════" >&2
+        echo "" >&2
+        return 1
+    fi
+    
+    # Listar os pares de chaves em formato de tabela
+    echo "$chaves_aws" | tr '\t' '\n' | awk 'BEGIN {
+        printf "%-4s %-60s\n", "Nº", "NOME DA CHAVE" | "cat >&2"
+        printf "%-4s %-60s\n", "----", "------------------------------------------------------------" | "cat >&2"
+    }
+    {
+        if ($0 != "") {
+            printf "%-4d %-60s\n", NR, $0 | "cat >&2"
+        }
+    }'
+    
+    echo "" >&2
+    echo "═══════════════════════════════════════════════════════════════════════════════" >&2
+    echo "" >&2
+    
+    return 0
+}
+
 # Função para listar pares de chaves locais (arquivos .pem na pasta)
 listar_pares_chaves_locais() {
     local pasta_par_chaves="$1"
@@ -88,6 +127,8 @@ listar_pares_chaves_locais() {
     
     if [ -z "$arquivos_pem" ]; then
         echo "  [INFO] Nenhum par de chaves encontrado na pasta local." >&2
+        echo "" >&2
+        echo "═══════════════════════════════════════════════════════════════════════════════" >&2
         echo "" >&2
         return 1
     fi
@@ -148,13 +189,17 @@ gerenciar_par_chaves() {
     fi
     
     while true; do
+        # Listar pares de chaves existentes na AWS
+        echo "Verificando pares de chaves na AWS..." >&2
+        listar_pares_chaves_aws
+        
         # Listar pares de chaves existentes localmente
         listar_pares_chaves_locais "$pasta_par_chaves"
         local tem_chaves=$?
         
         echo "Escolha uma opção:" >&2
         if [ $tem_chaves -eq 0 ]; then
-            echo "  [1-N] - Selecionar um par de chaves existente pelo número" >&2
+            echo "  [1-N] - Selecionar um par de chaves [LOCAL] existente pelo número" >&2
         fi
         echo "  [N] - Criar um novo par de chaves" >&2
         echo "" >&2
