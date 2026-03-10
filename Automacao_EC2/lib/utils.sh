@@ -55,6 +55,25 @@ titulo_etapa() {
     echo "Etapa $numero: $titulo" >&2
 }
 
+# Função para exibir menu principal e retornar a opção escolhida
+exibir_menu_principal() {
+    echo "═══════════════════════════════════════════════════════════════════════" >&2
+    echo "                         MENU PRINCIPAL" >&2
+    echo "═══════════════════════════════════════════════════════════════════════" >&2
+    echo "" >&2
+    echo "  1) Levantar toda a Infraestrutura" >&2
+    echo "  2) Derrubar toda a Infraestrutura" >&2
+    echo "" >&2
+    echo "═══════════════════════════════════════════════════════════════════════" >&2
+    echo "" >&2
+
+    local opcao
+    read -p "Escolha uma opção [1-2]: " opcao >&2
+    echo "" >&2
+
+    echo "$opcao"
+}
+
 # Função para confirmar ação destrutiva
 confirmar_acao() {
     local mensagem="$1"
