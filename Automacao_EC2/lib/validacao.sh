@@ -45,14 +45,4 @@ obter_input_validado() {
     done
 }
 
-# Função para obter input simples sem validação
-obter_input() {
-    local prompt="$1"
-    local valor
-    
-    echo "$prompt" >&2
-    read valor
-    echo "" >&2
-    
-    echo "$valor"
-}
+
