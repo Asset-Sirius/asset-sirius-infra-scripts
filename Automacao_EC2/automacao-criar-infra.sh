@@ -406,7 +406,7 @@ fi
 msg_info "Configuração das credenciais do banco de dados:"
 separador
 db_usuario=$(obter_input_validado "Digite o usuário master do banco de dados:")
-db_senha=$(obter_input_validado "Digite a senha master do banco de dados (mínimo 8 caracteres):")
+db_senha=$(obter_senha_validada "Digite a senha master do banco de dados (mínimo 8 caracteres):" 8)
 
 rds_id=$(criar_rds_mysql \
     "assetsirius-rds" \
