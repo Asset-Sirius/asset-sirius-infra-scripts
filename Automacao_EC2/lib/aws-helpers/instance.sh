@@ -79,4 +79,59 @@ obter_ip_publico_instancia() {
     return 1
 }
 
+# Função para aguardar SSH disponível e enviar chave .pem via SCP para a instância
+# Uso: aguardar_ssh_e_enviar_chave <ip> <caminho_chave_pem> <nome_chave>
+aguardar_ssh_e_enviar_chave() {
+    local ip="$1"
+    local caminho_chave="$2"
+    local nome_chave="$3"
+    local timeout=180
+    local intervalo=10
+    local elapsed=0
+    local ssh_pronto=false
+
+    msg_info "Aguardando instância ($ip) estar acessível via SSH..."
+
+    while [ $elapsed -lt $timeout ]; do
+        if ssh -i "$caminho_chave" \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            ubuntu@"$ip" "exit" 2>/dev/null; then
+            ssh_pronto=true
+            break
+        fi
+        msg_info "SSH ainda indisponível... ($elapsed/$timeout segundos)"
+        sleep $intervalo
+        elapsed=$((elapsed + intervalo))
+    done
+
+    if [ "$ssh_pronto" = false ]; then
+        msg_aviso "Instância não ficou acessível via SSH no tempo esperado."
+        msg_aviso "Execute manualmente após a instância inicializar:"
+        echo "  scp -i \"$caminho_chave\" \"$caminho_chave\" ubuntu@$ip:/home/ubuntu/.ssh/${nome_chave}.pem" >&2
+        return 1
+    fi
+
+    msg_info "SSH disponível! Enviando ${nome_chave}.pem via SCP..."
+    scp -i "$caminho_chave" \
+        -o StrictHostKeyChecking=no \
+        "$caminho_chave" \
+        ubuntu@"$ip":/home/ubuntu/.ssh/"${nome_chave}.pem"
+
+    if [ $? -eq 0 ]; then
+        ssh -i "$caminho_chave" \
+            -o StrictHostKeyChecking=no \
+            ubuntu@"$ip" \
+            "chmod 400 /home/ubuntu/.ssh/${nome_chave}.pem" 2>/dev/null
+        msg_sucesso "Chave enviada para /home/ubuntu/.ssh/${nome_chave}.pem"
+        return 0
+    else
+        msg_erro "Falha ao enviar a chave via SCP."
+        msg_aviso "Execute manualmente:"
+        echo "  scp -i \"$caminho_chave\" \"$caminho_chave\" ubuntu@$ip:/home/ubuntu/.ssh/${nome_chave}.pem" >&2
+        return 1
+    fi
+}
+
 

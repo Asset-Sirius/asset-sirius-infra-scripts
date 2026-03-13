@@ -426,6 +426,29 @@ separador
 pausar 2
 
 # ============================================================================
+# ETAPA 10: ENVIAR CHAVE .PEM PARA EC2 FRONTEND (VIA SCP)
+# ============================================================================
+titulo_etapa "10" "Enviando chave .pem para EC2 Frontend (acesso às subnets privadas)"
+separador
+
+CAMINHO_CHAVE_PEM="$PASTA_PAR_CHAVES/${nome_par_chaves}.pem"
+
+msg_info "Obtendo IP público da EC2 Frontend..."
+ip_frontend=$(obter_ip_publico_instancia "$ec2_frontend_id")
+
+if [ -z "$ip_frontend" ]; then
+    msg_aviso "IP público da EC2 Frontend não disponível ainda."
+    msg_aviso "Após a instância inicializar, execute manualmente:"
+    echo "  scp -i \"$CAMINHO_CHAVE_PEM\" \"$CAMINHO_CHAVE_PEM\" ubuntu@<IP_PUBLICO>:/home/ubuntu/.ssh/${nome_par_chaves}.pem" >&2
+else
+    msg_info "IP Público Frontend: $ip_frontend"
+    aguardar_ssh_e_enviar_chave "$ip_frontend" "$CAMINHO_CHAVE_PEM" "$nome_par_chaves"
+fi
+
+separador
+pausar 2
+
+# ============================================================================
 # RESUMO FINAL
 # ============================================================================
 echo "" >&2
