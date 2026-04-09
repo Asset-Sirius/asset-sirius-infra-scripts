@@ -1,0 +1,170 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Network stack - VPC, public/private subnets, Internet Gateway, NAT Gateway,
+  route tables and associations. Tagged with Name = asset-sirius-network.
+
+Parameters:
+  VpcCidrBlock:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block da VPC
+
+  PublicSubnet1Cidr:
+    Type: String
+    Default: 10.0.0.0/24
+    Description: CIDR da Subnet Pública 1
+
+  PrivateSubnet1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR da Subnet Privada 1
+
+  PrivateSubnet2Cidr:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR da Subnet Privada 2
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidrBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: asset-sirius-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: asset-sirius-igw
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Subnet Pública
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1Cidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: asset-sirius-subnet-public-1
+
+  # Subnets Privadas
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1Cidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: asset-sirius-subnet-private-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2Cidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: asset-sirius-subnet-private-2
+
+  # Elastic IP para o NAT Gateway
+  NatEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: asset-sirius-nat-eip
+
+  # NAT Gateway em uma subnet pública
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: asset-sirius-nat-gw
+
+  # Route Table Pública (rota para Internet via IGW)
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: asset-sirius-rtb-public
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Associação da subnet pública com a route table pública
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  # Route Table Privada (rota para Internet via NAT Gateway)
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: asset-sirius-rtb-private
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  # Associações das subnets privadas com a route table privada
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+Outputs:
+  VpcId:
+    Description: ID da VPC criada
+    Value: !Ref VPC
+
+  PublicSubnetId:
+    Description: ID da subnet pública
+    Value: !Ref PublicSubnet1
+
+  PrivateSubnetIds:
+    Description: IDs das subnets privadas
+    Value: !Join
+      - ","
+      - - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
