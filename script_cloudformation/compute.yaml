@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Compute stack - EC2 para aplicação Node.js e Grafana.
+
+Parameters:
+  NodeJsSubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet (ID) onde a EC2 Node.js será criada
+
+  GrafanaSubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet (ID) onde a EC2 Grafana será criada
+
+  NodeJsSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security Group da EC2 Node.js (stack security)
+
+  GrafanaSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security Group da EC2 Grafana (stack security)
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: >-
+      Nome do Key Pair EC2 (chave .pem já existente na conta).
+      CloudFormation não entrega o arquivo .pem, apenas associa a chave existente.
+
+  InstanceType:
+    Type: String
+    Default: t2.micro
+    Description: Tipo das instâncias EC2 (padrão t2.micro)
+
+  UbuntuAmiId:
+    Type: String
+    Default: ami-0ec10929233384c7f
+    Description: >-
+      ID da AMI Ubuntu Server (ex. 22.04 LTS) usada por ambas as EC2.
+
+Resources:
+  # ---------------------------
+  # EC2 - Node.js
+  # ---------------------------
+
+  NodeJsEc2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref UbuntuAmiId
+      KeyName: !Ref KeyName
+      SubnetId: !Ref NodeJsSubnetId
+      SecurityGroupIds:
+        - !Ref NodeJsSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: asset-sirius-ec2-nodejs
+      # Script de startup (UserData) - deixar vazio para ser configurado depois
+      UserData: !Base64 ''
+
+  # ---------------------------
+  # EC2 - Grafana
+  # ---------------------------
+
+  GrafanaEc2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref UbuntuAmiId
+      KeyName: !Ref KeyName
+      SubnetId: !Ref GrafanaSubnetId
+      SecurityGroupIds:
+        - !Ref GrafanaSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: asset-sirius-ec2-grafana
+      # Script de startup (UserData) - instalação básica do Grafana em Ubuntu
+      UserData: !Base64 |
+        #!/bin/bash
+        apt-get update -y
+        apt-get install -y wget gnupg2 software-properties-common
+        # Adiciona repositório oficial do Grafana
+        wget -q -O - https://packages.grafana.com/gpg.key | gpg --dearmor -o /usr/share/keyrings/grafana.gpg
+        echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://packages.grafana.com/oss/deb stable main" \
+          > /etc/apt/sources.list.d/grafana.list
+        apt-get update -y
+        apt-get install -y grafana
+        systemctl daemon-reload
+        systemctl enable grafana-server
+        systemctl start grafana-server
+
+Outputs:
+  NodeJsEc2InstanceId:
+    Description: ID da instância EC2 Node.js
+    Value: !Ref NodeJsEc2Instance
+
+  GrafanaEc2InstanceId:
+    Description: ID da instância EC2 Grafana
+    Value: !Ref GrafanaEc2Instance
+

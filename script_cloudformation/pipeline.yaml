@@ -1,0 +1,256 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Pipeline stack - Lambdas, Glue (Crawlers/Catálogo) e Athena.
+
+Parameters:
+  BronzeBucketName:
+    Type: String
+    Default: s3-asset-sirius-bucket-bronze
+    Description: Nome do bucket S3 Bronze
+
+  SilverBucketName:
+    Type: String
+    Default: s3-asset-sirius-bucket-silver
+    Description: Nome do bucket S3 Silver
+
+  GoldBucketName:
+    Type: String
+    Default: s3-asset-sirius-bucket-gold
+    Description: Nome do bucket S3 Gold
+
+  LambdaExecutionRoleArn:
+    Type: String
+    Default: arn:aws:iam::140787846243:role/LabRole
+    Description: ARN do IAM Role usado pelas funções Lambda
+
+  GlueRoleArn:
+    Type: String
+    Default: arn:aws:iam::140787846243:role/LabRole
+    Description: ARN do IAM Role usado pelos Crawlers do Glue
+
+  AthenaResultsPrefix:
+    Type: String
+    Default: wide-tables/
+    Description: Prefixo dentro do bucket para resultados do Athena
+
+Resources:
+  # ---------------------------
+  # Funções Lambda
+  # ---------------------------
+
+  IngestionLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub asset-sirius-lambda-ingestion-${AWS::Region}
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 300
+      MemorySize: 256
+      Environment:
+        Variables:
+          BRONZE_BUCKET: !Ref BronzeBucketName
+      Code:
+        ZipFile: |
+          import json
+
+          def handler(event, context):
+              print("Ingestion Lambda invoked")
+              print(json.dumps(event))
+              return {"statusCode": 200}
+
+  EtlLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub asset-sirius-lambda-etl-${AWS::Region}
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 900
+      MemorySize: 512
+      Environment:
+        Variables:
+          BRONZE_BUCKET: !Ref BronzeBucketName
+          SILVER_BUCKET: !Ref SilverBucketName
+      Code:
+        ZipFile: |
+          import json
+
+          def handler(event, context):
+              print("ETL Lambda invoked")
+              print(json.dumps(event))
+              return {"statusCode": 200}
+
+  WideTableLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub asset-sirius-lambda-wide-table-${AWS::Region}
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 900
+      MemorySize: 512
+      Environment:
+        Variables:
+          SILVER_BUCKET: !Ref SilverBucketName
+          GOLD_BUCKET: !Ref GoldBucketName
+      Code:
+        ZipFile: |
+          import json
+
+          def handler(event, context):
+              print("Wide Table Lambda invoked")
+              print(json.dumps(event))
+              return {"statusCode": 200}
+
+  InsertionLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub asset-sirius-lambda-insertion-${AWS::Region}
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 900
+      MemorySize: 512
+      Environment:
+        Variables:
+          GOLD_BUCKET: !Ref GoldBucketName
+      Code:
+        ZipFile: |
+          import json
+
+          def handler(event, context):
+              print("Insertion Lambda invoked")
+              print(json.dumps(event))
+              return {"statusCode": 200}
+
+  # ---------------------------
+  # Permissões Lambda para S3 (Triggers S3 -> Lambda)
+  # Obs: ainda é necessário configurar notificações no bucket (na stack de storage ou manualmente).
+  # ---------------------------
+
+  IngestionLambdaS3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref IngestionLambdaFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub arn:aws:s3:::${BronzeBucketName}
+
+  EtlLambdaS3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref EtlLambdaFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub arn:aws:s3:::${SilverBucketName}
+
+  WideTableLambdaS3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WideTableLambdaFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub arn:aws:s3:::${SilverBucketName}
+
+  InsertionLambdaS3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref InsertionLambdaFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub arn:aws:s3:::${GoldBucketName}
+
+  # ---------------------------
+  # Glue Data Catalog - Databases
+  # ---------------------------
+
+  GlueDatabaseBronze:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: asset_sirius_bronze
+        Description: Database Glue para camada Bronze
+
+  GlueDatabaseSilver:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: asset_sirius_silver
+        Description: Database Glue para camada Silver
+
+  GlueDatabaseGold:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: asset_sirius_gold
+        Description: Database Glue para camada Gold
+
+  # ---------------------------
+  # Glue Crawler - somente Gold
+  # ---------------------------
+
+  GlueCrawlerGold:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub asset-sirius-crawler-gold-${AWS::Region}
+      Role: !Ref GlueRoleArn
+      DatabaseName: !Ref GlueDatabaseGold
+      Targets:
+        S3Targets:
+          - Path: !Sub s3://${GoldBucketName}/
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: LOG
+
+  # ---------------------------
+  # Athena WorkGroup
+  # ---------------------------
+
+  AthenaWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: asset-sirius-athena-wg
+      Description: WorkGroup do Athena para acessar o catálogo Glue do Asset Sirius
+      State: ENABLED
+      WorkGroupConfiguration:
+        EnforceWorkGroupConfiguration: true
+        ResultConfiguration:
+          OutputLocation: !Sub s3://${GoldBucketName}/${AthenaResultsPrefix}
+
+Outputs:
+  IngestionLambdaArn:
+    Description: ARN da Lambda de Ingestão
+    Value: !GetAtt IngestionLambdaFunction.Arn
+
+  EtlLambdaArn:
+    Description: ARN da Lambda de ETL
+    Value: !GetAtt EtlLambdaFunction.Arn
+
+  WideTableLambdaArn:
+    Description: ARN da Lambda de Wide Table
+    Value: !GetAtt WideTableLambdaFunction.Arn
+
+  InsertionLambdaArn:
+    Description: ARN da Lambda de Inserção
+    Value: !GetAtt InsertionLambdaFunction.Arn
+
+  GlueDatabaseBronzeName:
+    Description: Nome do database Glue Bronze
+    Value: !Ref GlueDatabaseBronze
+
+  GlueDatabaseSilverName:
+    Description: Nome do database Glue Silver
+    Value: !Ref GlueDatabaseSilver
+
+  GlueDatabaseGoldName:
+    Description: Nome do database Glue Gold
+    Value: !Ref GlueDatabaseGold
+
+  AthenaWorkGroupName:
+    Description: Nome do WorkGroup do Athena
+    Value: !Ref AthenaWorkGroup
+

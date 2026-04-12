@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Storage stack - S3 (Bronze/Silver/Gold) e RDS MySQL.
+
+Parameters:
+  PrivateSubnet1Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: ID da Subnet Privada 1 usada pelo RDS
+
+  PrivateSubnet2Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: ID da Subnet Privada 2 usada pelo RDS
+
+  RdsSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: ID do Security Group do RDS (criado na stack de security)
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    Description: Classe da instância RDS MySQL
+
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+    Description: Tamanho do storage (GiB) para o RDS
+
+  DBName:
+    Type: String
+    Default: assetsiriusdb
+    Description: Nome do banco de dados inicial
+
+  MasterUsername:
+    Type: String
+    Default: usr_asset_sirius
+    Description: Usuário administrador do RDS
+
+  MasterUserPassword:
+    Type: String
+    NoEcho: true
+    Description: >-
+      Senha do usuário administrador do RDS (mínimo 8 caracteres).
+      Use apenas caracteres ASCII imprimíveis exceto '/', '@', '"' e espaço.
+
+Resources:
+  # ---------------------------
+  # S3 Buckets (Bronze/Silver/Gold)
+  # ---------------------------
+
+  S3BucketBronze:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: s3-asset-sirius-bucket-bronze
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: asset-sirius-s3-bronze
+
+  S3BucketSilver:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: s3-asset-sirius-bucket-silver
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: asset-sirius-s3-silver
+
+  S3BucketGold:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: s3-asset-sirius-bucket-gold
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: asset-sirius-s3-gold
+
+  # ---------------------------
+  # Subnet Group do RDS
+  # ---------------------------
+
+  RdsSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group para RDS MySQL (subnets privadas)
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      DBSubnetGroupName: asset-sirius-rds-subnet-group
+
+  # ---------------------------
+  # Instância RDS MySQL
+  # ---------------------------
+
+  RdsMySqlInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: mysql
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBName: !Ref DBName
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      VPCSecurityGroups:
+        - !Ref RdsSecurityGroupId
+      DBSubnetGroupName: !Ref RdsSubnetGroup
+      MultiAZ: false
+      PubliclyAccessible: false
+      DeletionProtection: false
+      StorageType: gp2
+      BackupRetentionPeriod: 1
+      Tags:
+        - Key: Name
+          Value: asset-sirius-rds-mysql
+
+Outputs:
+  S3BucketBronzeName:
+    Description: Nome do bucket S3 Bronze
+    Value: !Ref S3BucketBronze
+
+  S3BucketSilverName:
+    Description: Nome do bucket S3 Silver
+    Value: !Ref S3BucketSilver
+
+  S3BucketGoldName:
+    Description: Nome do bucket S3 Gold
+    Value: !Ref S3BucketGold
+
+  RdsEndpointAddress:
+    Description: Endpoint do RDS MySQL
+    Value: !GetAtt RdsMySqlInstance.Endpoint.Address
+
+  RdsEndpointPort:
+    Description: Porta do RDS MySQL
+    Value: !GetAtt RdsMySqlInstance.Endpoint.Port
+

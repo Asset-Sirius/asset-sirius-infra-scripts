@@ -24,6 +24,11 @@ Parameters:
     Default: 10.0.2.0/24
     Description: CIDR da Subnet Privada 2
 
+  PrivateSubnet3Cidr:
+    Type: String
+    Default: 10.0.3.0/24
+    Description: CIDR da Subnet Privada 3 (extra para RDS em outra AZ)
+
 Resources:
   VPC:
     Type: AWS::EC2::VPC
@@ -79,6 +84,16 @@ Resources:
       Tags:
         - Key: Name
           Value: asset-sirius-subnet-private-2
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet3Cidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: asset-sirius-subnet-private-3
 
   # Elastic IP para o NAT Gateway
   NatEIP:
@@ -152,6 +167,12 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable
 
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet3
+      RouteTableId: !Ref PrivateRouteTable
+
 Outputs:
   VpcId:
     Description: ID da VPC criada
@@ -167,4 +188,5 @@ Outputs:
       - ","
       - - !Ref PrivateSubnet1
         - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
 

@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Security stack - Security Groups para EC2 Node.js, EC2 Grafana e RDS.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: ID da VPC onde os Security Groups serão criados
+
+  SshAccessCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR liberado para acesso SSH (porta 22) às EC2
+
+  AppAccessCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR liberado para acesso HTTP/Aplicação Node.js
+
+  GrafanaAccessCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR liberado para acesso ao Grafana
+
+  VpcCidrBlock:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR da VPC (usado para acesso ao RDS)
+
+  NodeAppPort:
+    Type: Number
+    Default: 8080
+    Description: Porta da aplicação Node.js na EC2
+
+  GrafanaPort:
+    Type: Number
+    Default: 3000
+    Description: Porta do Grafana na EC2
+
+Resources:
+  # ---------------------------
+  # Security Group - EC2 Node.js
+  # ---------------------------
+
+  NodeJsEc2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group para EC2 Node.js
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # SSH
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SshAccessCidr
+        # HTTP (opcional, caso use porta 80)
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref AppAccessCidr
+        # Porta da aplicação Node.js
+        - IpProtocol: tcp
+          FromPort: !Ref NodeAppPort
+          ToPort: !Ref NodeAppPort
+          CidrIp: !Ref AppAccessCidr
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: asset-sirius-sg-ec2-nodejs
+
+  # ---------------------------
+  # Security Group - EC2 Grafana
+  # ---------------------------
+
+  GrafanaEc2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group para EC2 Grafana
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # SSH
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SshAccessCidr
+        # Porta do Grafana
+        - IpProtocol: tcp
+          FromPort: !Ref GrafanaPort
+          ToPort: !Ref GrafanaPort
+          CidrIp: !Ref GrafanaAccessCidr
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: asset-sirius-sg-ec2-grafana
+
+  # ---------------------------
+  # Security Group - RDS MySQL
+  # ---------------------------
+
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group para RDS MySQL
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: !Ref VpcCidrBlock
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: asset-sirius-sg-rds
+
+Outputs:
+  NodeJsEc2SecurityGroupId:
+    Description: ID do Security Group da EC2 Node.js
+    Value: !Ref NodeJsEc2SecurityGroup
+
+  GrafanaEc2SecurityGroupId:
+    Description: ID do Security Group da EC2 Grafana
+    Value: !Ref GrafanaEc2SecurityGroup
+
+  RdsSecurityGroupId:
+    Description: ID do Security Group do RDS MySQL
+    Value: !Ref RdsSecurityGroup
+
