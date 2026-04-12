@@ -50,14 +50,6 @@ Resources:
       Environment:
         Variables:
           BRONZE_BUCKET: !Ref BronzeBucketName
-      Code:
-        ZipFile: |
-          import json
-
-          def handler(event, context):
-              print("Ingestion Lambda invoked")
-              print(json.dumps(event))
-              return {"statusCode": 200}
 
   EtlLambdaFunction:
     Type: AWS::Lambda::Function
@@ -72,14 +64,8 @@ Resources:
         Variables:
           BRONZE_BUCKET: !Ref BronzeBucketName
           SILVER_BUCKET: !Ref SilverBucketName
-      Code:
-        ZipFile: |
-          import json
-
-          def handler(event, context):
-              print("ETL Lambda invoked")
-              print(json.dumps(event))
-              return {"statusCode": 200}
+      Layers:
+        - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:22
 
   WideTableLambdaFunction:
     Type: AWS::Lambda::Function
@@ -94,14 +80,6 @@ Resources:
         Variables:
           SILVER_BUCKET: !Ref SilverBucketName
           GOLD_BUCKET: !Ref GoldBucketName
-      Code:
-        ZipFile: |
-          import json
-
-          def handler(event, context):
-              print("Wide Table Lambda invoked")
-              print(json.dumps(event))
-              return {"statusCode": 200}
 
   InsertionLambdaFunction:
     Type: AWS::Lambda::Function
@@ -115,14 +93,6 @@ Resources:
       Environment:
         Variables:
           GOLD_BUCKET: !Ref GoldBucketName
-      Code:
-        ZipFile: |
-          import json
-
-          def handler(event, context):
-              print("Insertion Lambda invoked")
-              print(json.dumps(event))
-              return {"statusCode": 200}
 
   # ---------------------------
   # Permissões Lambda para S3 (Triggers S3 -> Lambda)
