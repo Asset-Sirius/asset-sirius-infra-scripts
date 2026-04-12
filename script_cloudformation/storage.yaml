@@ -51,6 +51,10 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: s3-asset-sirius-bucket-bronze
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !ImportValue asset-sirius-EtlLambdaArn
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
@@ -66,6 +70,10 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: s3-asset-sirius-bucket-silver
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !ImportValue asset-sirius-WideTableLambdaArn
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
@@ -81,6 +89,10 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: s3-asset-sirius-bucket-gold
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !ImportValue asset-sirius-InsertionLambdaArn
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:

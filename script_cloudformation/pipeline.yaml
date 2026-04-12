@@ -129,21 +129,14 @@ Resources:
   # Obs: ainda é necessário configurar notificações no bucket (na stack de storage ou manualmente).
   # ---------------------------
 
-  IngestionLambdaS3Permission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref IngestionLambdaFunction
-      Principal: s3.amazonaws.com
-      SourceArn: !Sub arn:aws:s3:::${BronzeBucketName}
-
   EtlLambdaS3Permission:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
       FunctionName: !Ref EtlLambdaFunction
       Principal: s3.amazonaws.com
-      SourceArn: !Sub arn:aws:s3:::${SilverBucketName}
+      # Gatilho: novo objeto na camada Bronze dispara a Lambda de ETL
+      SourceArn: !Sub arn:aws:s3:::${BronzeBucketName}
 
   WideTableLambdaS3Permission:
     Type: AWS::Lambda::Permission
@@ -151,6 +144,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref WideTableLambdaFunction
       Principal: s3.amazonaws.com
+      # Gatilho: novo objeto na camada Silver dispara a Lambda de Wide Table
       SourceArn: !Sub arn:aws:s3:::${SilverBucketName}
 
   InsertionLambdaS3Permission:
@@ -225,18 +219,26 @@ Outputs:
   IngestionLambdaArn:
     Description: ARN da Lambda de Ingestão
     Value: !GetAtt IngestionLambdaFunction.Arn
+    Export:
+      Name: asset-sirius-IngestionLambdaArn
 
   EtlLambdaArn:
     Description: ARN da Lambda de ETL
     Value: !GetAtt EtlLambdaFunction.Arn
+    Export:
+      Name: asset-sirius-EtlLambdaArn
 
   WideTableLambdaArn:
     Description: ARN da Lambda de Wide Table
     Value: !GetAtt WideTableLambdaFunction.Arn
+    Export:
+      Name: asset-sirius-WideTableLambdaArn
 
   InsertionLambdaArn:
     Description: ARN da Lambda de Inserção
     Value: !GetAtt InsertionLambdaFunction.Arn
+    Export:
+      Name: asset-sirius-InsertionLambdaArn
 
   GlueDatabaseBronzeName:
     Description: Nome do database Glue Bronze
