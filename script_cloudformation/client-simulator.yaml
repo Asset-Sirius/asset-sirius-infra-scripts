@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Client simulator stack - S3 de entrada, Lambdas de registro/alerta e SNS para email.
+  Recursos sem VpcConfig (fora da VPC do ambiente principal).
+
+Parameters:
+  SimulatorBucketName:
+    Type: String
+    Default: s3-asset-sirius-aplic-resgt
+    Description: Nome do bucket S3 que recebera os dados simulados
+
+  AlertEmailEndpoint:
+    Type: String
+    Description: Email que sera inscrito no topico SNS para receber alertas
+
+  LambdaRuntime:
+    Type: String
+    Default: python3.12
+    AllowedValues:
+      - python3.12
+      - python3.11
+    Description: Runtime Python das funcoes Lambda
+
+  LambdaExecutionRoleName:
+    Type: String
+    Default: LabRole
+    Description: Nome de uma role IAM existente para execucao das Lambdas (mesma conta da stack)
+
+Resources:
+  # ---------------------------
+  # SNS - Topico e assinatura
+  # ---------------------------
+
+  SimulatorAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: asset-sirius-client-simulator-alerts
+
+  SimulatorAlertsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SimulatorAlertsTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmailEndpoint
+
+  # ---------------------------
+  # Lambda unica - Registro + Alertas
+  # ---------------------------
+
+  SimuladorProcessorLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub asset-sirius-lambda-simulador-processor-${AWS::Region}
+      Runtime: !Ref LambdaRuntime
+      Handler: index.lambda_handler
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
+      Timeout: 60
+      MemorySize: 128
+      Environment:
+        Variables:
+          SIMULATOR_BUCKET: !Ref SimulatorBucketName
+          ALERT_TOPIC_ARN: !Ref SimulatorAlertsTopic
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+
+          sns = boto3.client("sns")
+          ALERT_TOPIC_ARN = os.environ["ALERT_TOPIC_ARN"]
+
+          def lambda_handler(event, context):
+              # Registro do evento recebido pelo bucket.
+              print("Evento recebido pela Lambda do simulador:")
+              print(json.dumps(event))
+
+              # Alerta via SNS com mensagem predefinida.
+              sns.publish(
+                  TopicArn=ALERT_TOPIC_ARN,
+                  Subject="Asset Sirius - Novo arquivo recebido",
+                  Message=(
+                      "O bucket do simulador recebeu um novo arquivo. "
+                      "Valide o processamento no ambiente Asset Sirius."
+                  )
+              )
+
+              return {
+                  "statusCode": 200,
+                  "body": "Registro e alerta executados com sucesso"
+              }
+
+  # ---------------------------
+  # Permissao para S3 invocar Lambda unica
+  # ---------------------------
+
+  SimuladorProcessorLambdaInvokePermissionFromS3:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SimuladorProcessorLambdaFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub arn:aws:s3:::${SimulatorBucketName}
+
+  # ---------------------------
+  # S3 - Bucket do simulador + notificacoes
+  # ---------------------------
+
+  SimulatorInputBucket:
+    Type: AWS::S3::Bucket
+    DependsOn:
+      - SimuladorProcessorLambdaInvokePermissionFromS3
+    Properties:
+      BucketName: !Ref SimulatorBucketName
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt SimuladorProcessorLambdaFunction.Arn
+
+Outputs:
+  SimulatorBucketNameOutput:
+    Description: Nome do bucket S3 do simulador
+    Value: !Ref SimulatorInputBucket
+
+  SimuladorProcessorLambdaArn:
+    Description: ARN da Lambda unica (registro + alertas)
+    Value: !GetAtt SimuladorProcessorLambdaFunction.Arn
+
+  AlertsSnsTopicArn:
+    Description: ARN do topico SNS de alertas
+    Value: !Ref SimulatorAlertsTopic
