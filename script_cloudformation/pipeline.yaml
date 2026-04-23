@@ -20,18 +20,32 @@ Parameters:
 
   LambdaExecutionRoleArn:
     Type: String
-    Default: arn:aws:iam::140787846243:role/LabRole
-    Description: ARN do IAM Role usado pelas funções Lambda
+    Default: arn:aws:iam::852131219041:role/LabRole
+    Description: ARN opcional do IAM Role usado pelas funções Lambda (deixe vazio para usar a role na conta atual)
+
+  LambdaExecutionRoleName:
+    Type: String
+    Default: LabRole
+    Description: Nome do IAM Role usado pelas funções Lambda na conta atual (quando LambdaExecutionRoleArn estiver vazio)
 
   GlueRoleArn:
     Type: String
-    Default: arn:aws:iam::140787846243:role/LabRole
-    Description: ARN do IAM Role usado pelos Crawlers do Glue
+    Default: arn:aws:iam::852131219041:role/LabRole
+    Description: ARN opcional do IAM Role usado pelos Crawlers do Glue (deixe vazio para usar a role na conta atual)
+
+  GlueRoleName:
+    Type: String
+    Default: LabRole
+    Description: Nome do IAM Role usado pelos Crawlers do Glue na conta atual (quando GlueRoleArn estiver vazio)
 
   AthenaResultsPrefix:
     Type: String
     Default: wide-tables/
     Description: Prefixo dentro do bucket para resultados do Athena
+
+Conditions:
+  HasLambdaExecutionRoleArn: !Not [!Equals [!Ref LambdaExecutionRoleArn, '']]
+  HasGlueRoleArn: !Not [!Equals [!Ref GlueRoleArn, '']]
 
 Resources:
   # ---------------------------
@@ -44,9 +58,19 @@ Resources:
       FunctionName: !Sub asset-sirius-lambda-ingestion-${AWS::Region}
       Runtime: python3.12
       Handler: index.handler
-      Role: !Ref LambdaExecutionRoleArn
+      Role: !If
+        - HasLambdaExecutionRoleArn
+        - !Ref LambdaExecutionRoleArn
+        - !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
       Timeout: 300
       MemorySize: 256
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {
+                  "statusCode": 200,
+                  "body": "Ingestion Lambda executada com sucesso"
+              }
       Environment:
         Variables:
           BRONZE_BUCKET: !Ref BronzeBucketName
@@ -57,9 +81,19 @@ Resources:
       FunctionName: !Sub asset-sirius-lambda-etl-${AWS::Region}
       Runtime: python3.12
       Handler: index.handler
-      Role: !Ref LambdaExecutionRoleArn
+      Role: !If
+        - HasLambdaExecutionRoleArn
+        - !Ref LambdaExecutionRoleArn
+        - !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
       Timeout: 900
       MemorySize: 512
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {
+                  "statusCode": 200,
+                  "body": "ETL Lambda executada com sucesso"
+              }
       Environment:
         Variables:
           BRONZE_BUCKET: !Ref BronzeBucketName
@@ -73,9 +107,19 @@ Resources:
       FunctionName: !Sub asset-sirius-lambda-wide-table-${AWS::Region}
       Runtime: python3.12
       Handler: index.handler
-      Role: !Ref LambdaExecutionRoleArn
+      Role: !If
+        - HasLambdaExecutionRoleArn
+        - !Ref LambdaExecutionRoleArn
+        - !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
       Timeout: 900
       MemorySize: 512
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {
+                  "statusCode": 200,
+                  "body": "Wide Table Lambda executada com sucesso"
+              }
       Environment:
         Variables:
           SILVER_BUCKET: !Ref SilverBucketName
@@ -87,9 +131,19 @@ Resources:
       FunctionName: !Sub asset-sirius-lambda-insertion-${AWS::Region}
       Runtime: python3.12
       Handler: index.handler
-      Role: !Ref LambdaExecutionRoleArn
+      Role: !If
+        - HasLambdaExecutionRoleArn
+        - !Ref LambdaExecutionRoleArn
+        - !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
       Timeout: 900
       MemorySize: 512
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {
+                  "statusCode": 200,
+                  "body": "Insertion Lambda executada com sucesso"
+              }
       Environment:
         Variables:
           GOLD_BUCKET: !Ref GoldBucketName
@@ -152,23 +206,6 @@ Resources:
       DatabaseInput:
         Name: asset_sirius_gold
         Description: Database Glue para camada Gold
-
-  # ---------------------------
-  # Glue Crawler - somente Gold
-  # ---------------------------
-
-  GlueCrawlerGold:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub asset-sirius-crawler-gold-${AWS::Region}
-      Role: !Ref GlueRoleArn
-      DatabaseName: !Ref GlueDatabaseGold
-      Targets:
-        S3Targets:
-          - Path: !Sub s3://${GoldBucketName}/
-      SchemaChangePolicy:
-        UpdateBehavior: UPDATE_IN_DATABASE
-        DeleteBehavior: LOG
 
   # ---------------------------
   # Athena WorkGroup
