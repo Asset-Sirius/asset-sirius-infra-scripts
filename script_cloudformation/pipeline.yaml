@@ -18,15 +18,15 @@ Parameters:
     Default: s3-asset-sirius-bucket-gold
     Description: Nome do bucket S3 Gold
 
-  LambdaExecutionRoleArn:
+  LambdaExecutionRoleName:
     Type: String
-    Default: arn:aws:iam::140787846243:role/LabRole
-    Description: ARN do IAM Role usado pelas funções Lambda
+    Default: LabRole
+    Description: Nome do IAM Role usado pelas funções Lambda na conta atual
 
-  GlueRoleArn:
+  GlueRoleName:
     Type: String
-    Default: arn:aws:iam::140787846243:role/LabRole
-    Description: ARN do IAM Role usado pelos Crawlers do Glue
+    Default: LabRole
+    Description: Nome do IAM Role usado pelos Crawlers do Glue na conta atual
 
   AthenaResultsPrefix:
     Type: String
@@ -44,9 +44,16 @@ Resources:
       FunctionName: !Sub asset-sirius-lambda-ingestion-${AWS::Region}
       Runtime: python3.12
       Handler: index.handler
-      Role: !Ref LambdaExecutionRoleArn
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
       Timeout: 300
       MemorySize: 256
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {
+                  "statusCode": 200,
+                  "body": "Lambda de Ingestao executada com sucesso"
+              }
       Environment:
         Variables:
           BRONZE_BUCKET: !Ref BronzeBucketName
@@ -57,9 +64,16 @@ Resources:
       FunctionName: !Sub asset-sirius-lambda-etl-${AWS::Region}
       Runtime: python3.12
       Handler: index.handler
-      Role: !Ref LambdaExecutionRoleArn
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
       Timeout: 900
       MemorySize: 512
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {
+                  "statusCode": 200,
+                  "body": "Lambda de ETL executada com sucesso"
+              }
       Environment:
         Variables:
           BRONZE_BUCKET: !Ref BronzeBucketName
@@ -73,9 +87,16 @@ Resources:
       FunctionName: !Sub asset-sirius-lambda-wide-table-${AWS::Region}
       Runtime: python3.12
       Handler: index.handler
-      Role: !Ref LambdaExecutionRoleArn
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
       Timeout: 900
       MemorySize: 512
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {
+                  "statusCode": 200,
+                  "body": "Lambda de Wide Table executada com sucesso"
+              }
       Environment:
         Variables:
           SILVER_BUCKET: !Ref SilverBucketName
@@ -87,9 +108,16 @@ Resources:
       FunctionName: !Sub asset-sirius-lambda-insertion-${AWS::Region}
       Runtime: python3.12
       Handler: index.handler
-      Role: !Ref LambdaExecutionRoleArn
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
       Timeout: 900
       MemorySize: 512
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {
+                  "statusCode": 200,
+                  "body": "Lambda de Ingestão executada com sucesso"
+              }
       Environment:
         Variables:
           GOLD_BUCKET: !Ref GoldBucketName
@@ -161,7 +189,7 @@ Resources:
     Type: AWS::Glue::Crawler
     Properties:
       Name: !Sub asset-sirius-crawler-gold-${AWS::Region}
-      Role: !Ref GlueRoleArn
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/${GlueRoleName}
       DatabaseName: !Ref GlueDatabaseGold
       Targets:
         S3Targets:
