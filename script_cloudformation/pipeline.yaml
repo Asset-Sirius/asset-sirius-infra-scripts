@@ -57,16 +57,18 @@ Resources:
     Properties:
       FunctionName: !Sub asset-sirius-lambda-ingestion-${AWS::Region}
       Runtime: python3.12
-      Handler: index.handler
+      Handler: index.lambda_handler
       Role: !If
         - HasLambdaExecutionRoleArn
         - !Ref LambdaExecutionRoleArn
         - !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
-      Timeout: 300
-      MemorySize: 256
+      Timeout: 240
+      MemorySize: 2024
+      EphemeralStorage:
+        Size: 3024
       Code:
         ZipFile: |
-          def handler(event, context):
+          def lambda_handler(event, context):
               return {
                   "statusCode": 200,
                   "body": "Ingestion Lambda executada com sucesso"
@@ -80,16 +82,18 @@ Resources:
     Properties:
       FunctionName: !Sub asset-sirius-lambda-etl-${AWS::Region}
       Runtime: python3.12
-      Handler: index.handler
+      Handler: index.lambda_handler
       Role: !If
         - HasLambdaExecutionRoleArn
         - !Ref LambdaExecutionRoleArn
         - !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
-      Timeout: 900
-      MemorySize: 512
+      Timeout: 600
+      MemorySize: 5024
+      EphemeralStorage:
+        Size: 5024
       Code:
         ZipFile: |
-          def handler(event, context):
+          def lambda_handler(event, context):
               return {
                   "statusCode": 200,
                   "body": "ETL Lambda executada com sucesso"
@@ -99,23 +103,25 @@ Resources:
           BRONZE_BUCKET: !Ref BronzeBucketName
           SILVER_BUCKET: !Ref SilverBucketName
       Layers:
-        - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:22
+        - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python314:4
 
   WideTableLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub asset-sirius-lambda-wide-table-${AWS::Region}
       Runtime: python3.12
-      Handler: index.handler
+      Handler: index.lambda_handler
       Role: !If
         - HasLambdaExecutionRoleArn
         - !Ref LambdaExecutionRoleArn
         - !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
-      Timeout: 900
-      MemorySize: 512
+      Timeout: 60
+      MemorySize: 1024
+      EphemeralStorage:
+        Size: 2024
       Code:
         ZipFile: |
-          def handler(event, context):
+          def lambda_handler(event, context):
               return {
                   "statusCode": 200,
                   "body": "Wide Table Lambda executada com sucesso"
@@ -124,13 +130,15 @@ Resources:
         Variables:
           SILVER_BUCKET: !Ref SilverBucketName
           GOLD_BUCKET: !Ref GoldBucketName
+      Layers:
+        - arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python314:4
 
   InsertionLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub asset-sirius-lambda-insertion-${AWS::Region}
       Runtime: python3.12
-      Handler: index.handler
+      Handler: index.lambda_handler
       Role: !If
         - HasLambdaExecutionRoleArn
         - !Ref LambdaExecutionRoleArn
@@ -139,7 +147,7 @@ Resources:
       MemorySize: 512
       Code:
         ZipFile: |
-          def handler(event, context):
+          def lambda_handler(event, context):
               return {
                   "statusCode": 200,
                   "body": "Insertion Lambda executada com sucesso"
@@ -150,26 +158,7 @@ Resources:
 
   # ---------------------------
   # Permissões Lambda para S3 (Triggers S3 -> Lambda)
-  # Obs: ainda é necessário configurar notificações no bucket (na stack de storage ou manualmente).
   # ---------------------------
-
-  EtlLambdaS3Permission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref EtlLambdaFunction
-      Principal: s3.amazonaws.com
-      # Gatilho: novo objeto na camada Bronze dispara a Lambda de ETL
-      SourceArn: !Sub arn:aws:s3:::${BronzeBucketName}
-
-  WideTableLambdaS3Permission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref WideTableLambdaFunction
-      Principal: s3.amazonaws.com
-      # Gatilho: novo objeto na camada Silver dispara a Lambda de Wide Table
-      SourceArn: !Sub arn:aws:s3:::${SilverBucketName}
 
   InsertionLambdaS3Permission:
     Type: AWS::Lambda::Permission
@@ -182,22 +171,6 @@ Resources:
   # ---------------------------
   # Glue Data Catalog - Databases
   # ---------------------------
-
-  GlueDatabaseBronze:
-    Type: AWS::Glue::Database
-    Properties:
-      CatalogId: !Ref AWS::AccountId
-      DatabaseInput:
-        Name: asset_sirius_bronze
-        Description: Database Glue para camada Bronze
-
-  GlueDatabaseSilver:
-    Type: AWS::Glue::Database
-    Properties:
-      CatalogId: !Ref AWS::AccountId
-      DatabaseInput:
-        Name: asset_sirius_silver
-        Description: Database Glue para camada Silver
 
   GlueDatabaseGold:
     Type: AWS::Glue::Database
@@ -246,14 +219,6 @@ Outputs:
     Value: !GetAtt InsertionLambdaFunction.Arn
     Export:
       Name: asset-sirius-InsertionLambdaArn
-
-  GlueDatabaseBronzeName:
-    Description: Nome do database Glue Bronze
-    Value: !Ref GlueDatabaseBronze
-
-  GlueDatabaseSilverName:
-    Description: Nome do database Glue Silver
-    Value: !Ref GlueDatabaseSilver
 
   GlueDatabaseGoldName:
     Description: Nome do database Glue Gold
