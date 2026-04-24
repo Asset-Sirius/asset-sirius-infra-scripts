@@ -86,6 +86,8 @@ Resources:
         systemctl daemon-reload
         systemctl enable grafana-server
         systemctl start grafana-server
+        sudo grafana cli plugins install grafana-athena-datasource
+        sudo systemctl restart grafana-server
 
 Outputs:
   NodeJsEc2InstanceId:
