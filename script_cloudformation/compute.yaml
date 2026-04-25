@@ -36,7 +36,18 @@ Parameters:
     Description: >-
       ID da AMI Ubuntu Server (ex. 22.04 LTS) usada por ambas as EC2.
 
+  Ec2IamRoleArn:
+    Type: String
+    Default: arn:aws:iam::852131219041:role/LabRole
+    Description: ARN do IAM Role padrão anexado às EC2 via Instance Profile
+
 Resources:
+  Ec2DefaultInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Select [1, !Split ['/', !Ref Ec2IamRoleArn]]
+
   # ---------------------------
   # EC2 - Node.js
   # ---------------------------
@@ -47,6 +58,7 @@ Resources:
       InstanceType: !Ref InstanceType
       ImageId: !Ref UbuntuAmiId
       KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref Ec2DefaultInstanceProfile
       SubnetId: !Ref NodeJsSubnetId
       SecurityGroupIds:
         - !Ref NodeJsSecurityGroupId
@@ -66,6 +78,7 @@ Resources:
       InstanceType: !Ref InstanceType
       ImageId: !Ref UbuntuAmiId
       KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref Ec2DefaultInstanceProfile
       SubnetId: !Ref GrafanaSubnetId
       SecurityGroupIds:
         - !Ref GrafanaSecurityGroupId
