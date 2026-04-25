@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
-  Pipeline stack - Lambdas, Glue (Crawlers/Catálogo) e Athena.
+  Pipeline stack - Lambdas e Glue (Catálogo).
 
 Parameters:
   BronzeBucketName:
@@ -37,11 +37,6 @@ Parameters:
     Type: String
     Default: LabRole
     Description: Nome do IAM Role usado pelos Crawlers do Glue na conta atual (quando GlueRoleArn estiver vazio)
-
-  AthenaResultsPrefix:
-    Type: String
-    Default: wide-tables/
-    Description: Prefixo dentro do bucket para resultados do Athena
 
 Conditions:
   HasLambdaExecutionRoleArn: !Not [!Equals [!Ref LambdaExecutionRoleArn, '']]
@@ -180,21 +175,6 @@ Resources:
         Name: asset_sirius_gold
         Description: Database Glue para camada Gold
 
-  # ---------------------------
-  # Athena WorkGroup
-  # ---------------------------
-
-  AthenaWorkGroup:
-    Type: AWS::Athena::WorkGroup
-    Properties:
-      Name: asset-sirius-athena-wg
-      Description: WorkGroup do Athena para acessar o catálogo Glue do Asset Sirius
-      State: ENABLED
-      WorkGroupConfiguration:
-        EnforceWorkGroupConfiguration: true
-        ResultConfiguration:
-          OutputLocation: !Sub s3://${GoldBucketName}/${AthenaResultsPrefix}
-
 Outputs:
   IngestionLambdaArn:
     Description: ARN da Lambda de Ingestão
@@ -224,7 +204,4 @@ Outputs:
     Description: Nome do database Glue Gold
     Value: !Ref GlueDatabaseGold
 
-  AthenaWorkGroupName:
-    Description: Nome do WorkGroup do Athena
-    Value: !Ref AthenaWorkGroup
 
