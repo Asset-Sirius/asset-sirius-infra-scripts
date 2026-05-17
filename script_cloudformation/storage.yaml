@@ -101,8 +101,8 @@ Resources:
     Properties:
       DBSubnetGroupDescription: Subnet group para RDS MySQL (subnets privadas)
       SubnetIds:
-        - !Ref PrivateSubnet1Id
         - !Ref PrivateSubnet2Id
+        - !Ref PrivateSubnet3Id
       DBSubnetGroupName: asset-sirius-rds-subnet-group
 
   # ---------------------------
