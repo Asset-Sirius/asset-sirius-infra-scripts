@@ -1,0 +1,101 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Arquivos de Template Bucket S3",
+        "formDescription": "adicione os arquivos necessário para poder fazer upload no bucket S3",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Templates Bucket S3",
+              "fieldType": "file"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        -176,
+        -64
+      ],
+      "id": "179454df-5bc4-48bb-ba32-a39423975c08",
+      "name": "On form submission",
+      "webhookId": "f3429805-40d3-45b3-bf92-a170b81b4987"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "asset-sirius-bucket-templates",
+        "fileName": "={{$binary.data.fileName}}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        320,
+        -64
+      ],
+      "id": "b7ffba5f-0bab-47c7-bef5-6dd2374af19b",
+      "name": "Upload a file",
+      "credentials": {
+        "aws": {
+          "id": "amDJdCJlkD5JJKfU",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const binaries = items[0].binary;\n\nconst output = [];\n\nfor (const key of Object.keys(binaries)) {\n  output.push({\n    binary: {\n      data: binaries[key]\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        -64
+      ],
+      "id": "fcbf8ab6-1bff-4aa9-af25-652d664688a8",
+      "name": "Loop dos Templates"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Loop dos Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop dos Templates": {
+      "main": [
+        [
+          {
+            "node": "Upload a file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "fad2112e-e49b-4363-b9d0-dede4b407e42",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ab8dddaed9452fa1fde3fab85a9dbc2a3b6c803827e08dd0f0c41d032502538a"
+  },
+  "id": "PdK8xPChGW2e6mub",
+  "tags": []
+}
