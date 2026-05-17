@@ -3,13 +3,13 @@ Description: >-
   Storage stack - S3 (Bronze/Silver/Gold) e RDS MySQL.
 
 Parameters:
-  PrivateSubnet1Id:
-    Type: AWS::EC2::Subnet::Id
-    Description: ID da Subnet Privada 1 usada pelo RDS
-
   PrivateSubnet2Id:
     Type: AWS::EC2::Subnet::Id
     Description: ID da Subnet Privada 2 usada pelo RDS
+
+  PrivateSubnet3Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: ID da Subnet Privada 3 usada pelo RDS
 
   RdsSecurityGroupId:
     Type: AWS::EC2::SecurityGroup::Id
@@ -37,7 +37,7 @@ Parameters:
 
   MasterUserPassword:
     Type: String
-    NoEcho: true
+    Default: 12345678
     Description: >-
       Senha do usuário administrador do RDS (mínimo 8 caracteres).
       Use apenas caracteres ASCII imprimíveis exceto '/', '@', '"' e espaço.
