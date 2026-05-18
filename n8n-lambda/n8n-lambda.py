@@ -45,7 +45,8 @@ STACKS_CONFIG = [
             'GrafanaSecurityGroupId': 'GrafanaEc2SecurityGroupId',  # Output da stack security
             'GrafanaSubnetId': 'PublicSubnetId',  # Output da stack network (subnet pública 1)
             'NodeJsSecurityGroupId': 'NodeJsEc2SecurityGroupId',  # Output da stack security
-            'NodeJsSubnetId': 'PrivateSubnet1Id'  # Extraído de PrivateSubnetIds da network
+            'NodeJsSubnetId': 'PrivateSubnet1Id',  # Extraído de PrivateSubnetIds da network
+            'KeyName': 'testeKiteria'  # Key pair para acesso SSH às EC2
         },
         'depends_on': ['asset-sirius-network', 'asset-sirius-security', 'asset-sirius-storage']
     }
@@ -182,7 +183,9 @@ def resolve_stack_parameters(stack_config, stack_outputs_map):
                         break
             
             if not found:
-                print(f"AVISO: Não foi possível resolver parâmetro {param_key}={param_value}")
+                # Se não encontrou nos outputs, usa o valor literal
+                # (para parâmetros como KeyName que são valores diretos, não outputs)
+                resolved_parameters[param_key] = param_value
         else:
             resolved_parameters[param_key] = param_value
     
