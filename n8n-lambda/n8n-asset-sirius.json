@@ -1,0 +1,165 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Arquivos de Template Bucket S3",
+        "formDescription": "adicione os arquivos necessário para poder fazer upload no bucket S3",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Templates Bucket S3",
+              "fieldType": "file"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        -176,
+        -64
+      ],
+      "id": "179454df-5bc4-48bb-ba32-a39423975c08",
+      "name": "On form submission",
+      "webhookId": "f3429805-40d3-45b3-bf92-a170b81b4987"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "asset-sirius-bucket-templates",
+        "fileName": "={{$binary.data.fileName}}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        320,
+        -64
+      ],
+      "id": "b7ffba5f-0bab-47c7-bef5-6dd2374af19b",
+      "name": "Upload a file",
+      "credentials": {
+        "aws": {
+          "id": "amDJdCJlkD5JJKfU",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const binaries = items[0].binary;\n\nconst output = [];\n\nfor (const key of Object.keys(binaries)) {\n  output.push({\n    binary: {\n      data: binaries[key]\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        -64
+      ],
+      "id": "fcbf8ab6-1bff-4aa9-af25-652d664688a8",
+      "name": "Loop dos Templates"
+    },
+    {
+      "parameters": {
+        "function": "arn:aws:lambda:us-east-1:852131219041:function:asset-sirius-cloudformation"
+      },
+      "type": "n8n-nodes-base.awsLambda",
+      "typeVersion": 1,
+      "position": [
+        528,
+        -64
+      ],
+      "id": "a284086f-fd61-4ef4-b59a-da24da0c7016",
+      "name": "AWS Lambda",
+      "credentials": {
+        "aws": {
+          "id": "amDJdCJlkD5JJKfU",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "lucas.canuto@sptech.school",
+        "toEmail": "lucas.canuto@sptech.school",
+        "html": "=<tr> <td style=\"background:#111827;padding:30px;text-align:center;\"> <h1 style=\"color:#ffffff;margin:0;font-size:24px;\"> ✅ Infraestrutura Provisionada </h1> </td> </tr> <tr> <td style=\"padding:30px;\"> <p style=\"font-size:16px;color:#374151;\"> O processo de provisionamento da infraestrutura foi concluído com sucesso. </p> <table width=\"100%\" cellpadding=\"10\" cellspacing=\"0\" style=\"margin-top:20px;border-collapse:collapse;\"> <tr style=\"background:#f9fafb;\"> <td style=\"border:1px solid #e5e7eb;\"><strong>Ambiente</strong></td> <td style=\"border:1px solid #e5e7eb;\">Produção</td> </tr> <tr> <td style=\"border:1px solid #e5e7eb;\"><strong>Execução</strong></td> <td style=\"border:1px solid #e5e7eb;\">{{$execution.id}}</td> </tr> <tr style=\"background:#f9fafb;\"> <td style=\"border:1px solid #e5e7eb;\"><strong>Workflow</strong></td> <td style=\"border:1px solid #e5e7eb;\">{{$workflow.name}}</td> </tr> <tr> <td style=\"border:1px solid #e5e7eb;\"><strong>Horário</strong></td> <td style=\"border:1px solid #e5e7eb;\">{{$now}}</td> </tr> <tr style=\"background:#f9fafb;\"> <td style=\"border:1px solid #e5e7eb;\"><strong>Status</strong></td> <td style=\"border:1px solid #e5e7eb;color:green;\"> ✔ Sucesso </td> </tr> </table> <div style=\"margin-top:30px;text-align:center;\"> <a href=\"https://seu-dashboard.com\" style=\"background:#2563eb;color:#ffffff;padding:12px 20px;text-decoration:none;border-radius:8px;display:inline-block;\"> Abrir Dashboard </a> </div> </td> </tr> <tr> <td style=\"background:#f3f4f6;padding:20px;text-align:center;font-size:12px;color:#6b7280;\"> Mensagem automática enviada pelo pipeline de infraestrutura. </td> </tr> </table> </td> </tr>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        736,
+        -64
+      ],
+      "id": "172dda5c-56db-427e-acba-a82f90f7a116",
+      "name": "Send an Email",
+      "webhookId": "23e82f9c-061b-4e17-8567-734d68a39452",
+      "credentials": {
+        "smtp": {
+          "id": "mst13SP7I2LWBYEu",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Loop dos Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop dos Templates": {
+      "main": [
+        [
+          {
+            "node": "Upload a file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload a file": {
+      "main": [
+        [
+          {
+            "node": "AWS Lambda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AWS Lambda": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "3742f89e-e177-4440-a602-1c0874ddcd3c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ab8dddaed9452fa1fde3fab85a9dbc2a3b6c803827e08dd0f0c41d032502538a"
+  },
+  "id": "PdK8xPChGW2e6mub",
+  "tags": []
+}
