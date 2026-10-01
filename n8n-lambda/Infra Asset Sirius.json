@@ -1,0 +1,137 @@
+{
+  "name": "Infra Asset Sirius",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Arquivos de Template Bucket S3",
+        "formDescription": "adicione os arquivos necessário para poder fazer upload no bucket S3",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Templates Bucket S3",
+              "fieldType": "file"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        944,
+        -64
+      ],
+      "id": "bf3a1d32-e5dc-4d4a-a15a-bdbda6e3e216",
+      "name": "On form submission",
+      "webhookId": "082903dd-3ba7-4389-a91c-7a9b58c4e8c1"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "asset-sirius-bucket-templates",
+        "fileName": "={{$binary.data.fileName}}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        -64
+      ],
+      "id": "2d4ade7c-7705-45b9-bd9e-e356eccd7f2d",
+      "name": "Upload a file",
+      "credentials": {
+        "aws": {
+          "id": "amDJdCJlkD5JJKfU",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const binaries = items[0].binary;\n\nconst output = [];\n\nfor (const key of Object.keys(binaries)) {\n  output.push({\n    binary: {\n      data: binaries[key]\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -64
+      ],
+      "id": "3f2c4bfb-20b4-4b12-8c2e-406cc5908e90",
+      "name": "Loop dos Templates"
+    },
+    {
+      "parameters": {
+        "function": "arn:aws:lambda:us-east-1:852131219041:function:asset-sirius-cloudformation",
+        "invocationType": "Event"
+      },
+      "type": "n8n-nodes-base.awsLambda",
+      "typeVersion": 1,
+      "position": [
+        1648,
+        -64
+      ],
+      "id": "845a405b-fc92-49d6-9435-72a4e4b11579",
+      "name": "AWS Lambda",
+      "credentials": {
+        "aws": {
+          "id": "amDJdCJlkD5JJKfU",
+          "name": "AWS (IAM) account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Loop dos Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop dos Templates": {
+      "main": [
+        [
+          {
+            "node": "Upload a file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload a file": {
+      "main": [
+        [
+          {
+            "node": "AWS Lambda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AWS Lambda": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "9b5c9204-663d-4155-a91a-ceaef876f01c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ab8dddaed9452fa1fde3fab85a9dbc2a3b6c803827e08dd0f0c41d032502538a"
+  },
+  "id": "PdK8xPChGW2e6mub",
+  "tags": []
+}
