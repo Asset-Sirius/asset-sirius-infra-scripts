@@ -333,7 +333,7 @@ def lambda_handler(event, context):
     """
     
     # Recupera configurações de variáveis de ambiente
-    template_bucket = event.get('template_bucket') or 'asset-sirius-bucket-templates'
+    template_bucket = event.get('template_bucket') or 'asset-sirius-infra'
     template_key_prefix = event.get('template_key_prefix') or ''
     
     print("="*60)
