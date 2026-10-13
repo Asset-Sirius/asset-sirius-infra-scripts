@@ -5,22 +5,22 @@ Description: >-
 Parameters:
   BronzeBucketName:
     Type: String
-    Default: s3-asset-sirius-bucket-bronze
+    Default: asset-sirius-bronze
     Description: Nome do bucket S3 Bronze
 
   SilverBucketName:
     Type: String
-    Default: s3-asset-sirius-bucket-silver
+    Default: asset-sirius-silver
     Description: Nome do bucket S3 Silver
 
   GoldBucketName:
     Type: String
-    Default: s3-asset-sirius-bucket-gold
+    Default: asset-sirius-gold
     Description: Nome do bucket S3 Gold
 
   LambdaExecutionRoleArn:
     Type: String
-    Default: arn:aws:iam::852131219041:role/LabRole
+    Default: ""
     Description: ARN opcional do IAM Role usado pelas funções Lambda (deixe vazio para usar a role na conta atual)
 
   LambdaExecutionRoleName:
@@ -30,7 +30,7 @@ Parameters:
 
   GlueRoleArn:
     Type: String
-    Default: arn:aws:iam::852131219041:role/LabRole
+    Default: ""
     Description: ARN opcional do IAM Role usado pelos Crawlers do Glue (deixe vazio para usar a role na conta atual)
 
   GlueRoleName:

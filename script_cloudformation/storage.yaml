@@ -50,7 +50,7 @@ Resources:
   S3BucketBronze:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: s3-asset-sirius-bucket-bronze
+      BucketName: asset-sirius-bronze
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
@@ -65,7 +65,7 @@ Resources:
   S3BucketSilver:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: s3-asset-sirius-bucket-silver
+      BucketName: asset-sirius-silver
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
@@ -80,7 +80,7 @@ Resources:
   S3BucketGold:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: s3-asset-sirius-bucket-gold
+      BucketName: asset-sirius-gold
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
