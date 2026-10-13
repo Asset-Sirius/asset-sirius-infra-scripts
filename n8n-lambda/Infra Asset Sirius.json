@@ -18,7 +18,7 @@
       "type": "n8n-nodes-base.formTrigger",
       "typeVersion": 2.5,
       "position": [
-        944,
+        896,
         -64
       ],
       "id": "bf3a1d32-e5dc-4d4a-a15a-bdbda6e3e216",
@@ -28,15 +28,15 @@
     {
       "parameters": {
         "operation": "upload",
-        "bucketName": "asset-sirius-bucket-templates",
+        "bucketName": "asset-sirius-infra",
         "fileName": "={{$binary.data.fileName}}",
         "additionalFields": {}
       },
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
       "position": [
-        1440,
-        -64
+        1632,
+        -224
       ],
       "id": "2d4ade7c-7705-45b9-bd9e-e356eccd7f2d",
       "name": "Upload a file",
@@ -49,30 +49,87 @@
     },
     {
       "parameters": {
-        "jsCode": "const binaries = items[0].binary;\n\nconst output = [];\n\nfor (const key of Object.keys(binaries)) {\n  output.push({\n    binary: {\n      data: binaries[key]\n    }\n  });\n}\n\nreturn output;"
+        "jsCode": "const binaries = $('On form submission').first().binary;\n\nconst output = [];\n\nfor (const key of Object.keys(binaries)) {\n  output.push({\n    binary: {\n      data: binaries[key]\n    }\n  });\n}\n\nreturn output;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1200,
-        -64
+        1440,
+        -224
       ],
       "id": "3f2c4bfb-20b4-4b12-8c2e-406cc5908e90",
       "name": "Loop dos Templates"
     },
     {
       "parameters": {
-        "function": "arn:aws:lambda:us-east-1:852131219041:function:asset-sirius-cloudformation",
+        "function": "arn:aws:lambda:us-east-1:918151085176:function:asset-sirius-infra",
         "invocationType": "Event"
       },
       "type": "n8n-nodes-base.awsLambda",
       "typeVersion": 1,
       "position": [
-        1648,
-        -64
+        1840,
+        -48
       ],
       "id": "845a405b-fc92-49d6-9435-72a4e4b11579",
       "name": "AWS Lambda",
+      "credentials": {
+        "aws": {
+          "id": "amDJdCJlkD5JJKfU",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2e46224d-305e-4b88-a35e-eab81a58026d",
+              "leftValue": "={{ $json.Key }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1248,
+        -64
+      ],
+      "id": "6cf9fc17-9c41-4b77-a717-8531c3242a35",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "bucketName": "asset-sirius-infra",
+        "limit": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        -64
+      ],
+      "id": "5a3c541f-063b-436f-8f20-22c6800a3f40",
+      "name": "Verificar Arquivos de Infra",
+      "alwaysOutputData": true,
       "credentials": {
         "aws": {
           "id": "amDJdCJlkD5JJKfU",
@@ -87,7 +144,7 @@
       "main": [
         [
           {
-            "node": "Loop dos Templates",
+            "node": "Verificar Arquivos de Infra",
             "type": "main",
             "index": 0
           }
@@ -120,6 +177,35 @@
       "main": [
         []
       ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Loop dos Templates",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AWS Lambda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Arquivos de Infra": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -127,7 +213,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "9b5c9204-663d-4155-a91a-ceaef876f01c",
+  "versionId": "79bc9a73-097c-48c9-8632-6eebac7a561c",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "ab8dddaed9452fa1fde3fab85a9dbc2a3b6c803827e08dd0f0c41d032502538a"
