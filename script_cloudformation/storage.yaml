@@ -91,6 +91,11 @@ Resources:
       Tags:
         - Key: Name
           Value: asset-sirius-s3-gold
+  S3GoldResultQueriesFolder:
+    Type: AWS::S3::BucketObject
+    Properties:
+      Bucket: !Ref S3BucketGold
+      Key: result-queries/
 
   # ---------------------------
   # Subnet Group do RDS

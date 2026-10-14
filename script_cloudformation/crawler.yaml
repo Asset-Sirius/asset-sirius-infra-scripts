@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Glue Crawler stack - cria um crawler que varre os objetos em
+  s3://asset-sirius-gold/cvm/ e popula o database asset_sirius_gold.
+
+Parameters:
+  CrawlerName:
+    Type: String
+    Default: asset-sirius-crawler
+    Description: Nome do Glue Crawler
+
+  GlueRoleArn:
+    Type: String
+    Default: ""
+    Description: ARN opcional do IAM Role usado pelo Glue Crawler (se informado será usado diretamente)
+
+  GlueRoleName:
+    Type: String
+    Default: LabRole
+    Description: Nome do IAM Role usado pelo Glue Crawler quando GlueRoleArn estiver vazio
+
+  DatabaseName:
+    Type: String
+    Default: asset_sirius_gold
+    Description: Nome do database do Glue onde as tabelas serão criadas
+
+  RecrawlBehavior:
+    Type: String
+    Default: CRAWL_NEW_FOLDERS_ONLY
+    AllowedValues:
+      - CRAWL_NEW_FOLDERS_ONLY
+      - CRAWL_EVERYTHING
+    Description: Política de recrawl usada pelo crawler
+
+Conditions:
+  HasGlueRoleArn: !Not [!Equals [!Ref GlueRoleArn, ""]]
+
+Resources:
+  ResultQueriesCvmCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Ref CrawlerName
+      # Role precisa ser um ARN
+      Role: !If
+        - HasGlueRoleArn
+        - !Ref GlueRoleArn
+        - !Sub arn:aws:iam::${AWS::AccountId}:role/${GlueRoleName}
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: s3://asset-sirius-gold/cvm/
+      # No TablePrefix configured — crawler will create tables with detected names
+      RecrawlPolicy:
+        RecrawlBehavior: !Ref RecrawlBehavior
+      # Sem Schedule — on-demand conforme solicitado
+
+Outputs:
+  CrawlerName:
+    Description: Nome do Glue Crawler criado
+    Value: !Ref ResultQueriesCvmCrawler
+
+# Nota: a role usada pelo crawler precisa ter permissão s3:ListBucket e s3:GetObject
+# para o prefixo asset-sirius-gold/result-queries/cvm/. Se quiser, posso adicionar
+# uma role gerenciada no template em vez de depender de GlueRoleArn/GlueRoleName.

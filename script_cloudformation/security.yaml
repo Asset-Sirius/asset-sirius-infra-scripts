@@ -37,6 +37,11 @@ Parameters:
     Default: 3000
     Description: Porta do Grafana na EC2
 
+  FrontendPort:
+    Type: Number
+    Default: 80
+    Description: Porta exposta pelo container do frontend (na EC2 Grafana)
+
 Resources:
   # ---------------------------
   # Security Group - EC2 Node.js
@@ -91,6 +96,11 @@ Resources:
         - IpProtocol: tcp
           FromPort: !Ref GrafanaPort
           ToPort: !Ref GrafanaPort
+          CidrIp: !Ref GrafanaAccessCidr
+        # Porta do frontend (servindo os painéis embutidos)
+        - IpProtocol: tcp
+          FromPort: !Ref FrontendPort
+          ToPort: !Ref FrontendPort
           CidrIp: !Ref GrafanaAccessCidr
       SecurityGroupEgress:
         - IpProtocol: -1
