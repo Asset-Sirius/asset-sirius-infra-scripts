@@ -6,7 +6,7 @@ Description: >-
 Parameters:
   CrawlerName:
     Type: String
-    Default: asset-sirius-crawler
+    Default: asset-sirius-crawler-teste
     Description: Nome do Glue Crawler
 
   GlueRoleArn:
@@ -26,7 +26,7 @@ Parameters:
 
   RecrawlBehavior:
     Type: String
-    Default: CRAWL_NEW_FOLDERS_ONLY
+    Default: CRAWL_EVERYTHING
     AllowedValues:
       - CRAWL_NEW_FOLDERS_ONLY
       - CRAWL_EVERYTHING
