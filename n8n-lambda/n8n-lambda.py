@@ -39,6 +39,12 @@ STACKS_CONFIG = [
         'depends_on': ['asset-sirius-network', 'asset-sirius-security']
     },
     {
+        'name': 'asset-sirius-crawler',
+        'template': 'crawler.yaml',
+        'parameters': {},  # Usa defaults do template
+        'depends_on': ['asset-sirius-storage']
+    },
+    {
         'name': 'asset-sirius-compute',
         'template': 'compute.yaml',
         'parameters': {
