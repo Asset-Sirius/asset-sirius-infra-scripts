@@ -91,11 +91,8 @@ Resources:
       Tags:
         - Key: Name
           Value: asset-sirius-s3-gold
-  S3GoldResultQueriesFolder:
-    Type: AWS::S3::BucketObject
-    Properties:
-      Bucket: !Ref S3BucketGold
-      Key: result-queries/
+  # Note: S3 objects ("folders" like result-queries/) are not native CloudFormation
+  # resources. Create the prefix/object via CLI or pipeline after stack creation.
 
   # ---------------------------
   # Subnet Group do RDS
