@@ -57,8 +57,8 @@ Resources:
         - HasLambdaExecutionRoleArn
         - !Ref LambdaExecutionRoleArn
         - !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
-      Timeout: 240
-      MemorySize: 2024
+      Timeout: 900
+      MemorySize: 10240
       EphemeralStorage:
         Size: 3024
       Code:
@@ -82,8 +82,8 @@ Resources:
         - HasLambdaExecutionRoleArn
         - !Ref LambdaExecutionRoleArn
         - !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
-      Timeout: 600
-      MemorySize: 5024
+      Timeout: 900
+      MemorySize: 10240
       EphemeralStorage:
         Size: 5024
       Code:
@@ -110,8 +110,8 @@ Resources:
         - HasLambdaExecutionRoleArn
         - !Ref LambdaExecutionRoleArn
         - !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
-      Timeout: 60
-      MemorySize: 1024
+      Timeout: 900
+      MemorySize: 10240
       EphemeralStorage:
         Size: 2024
       Code:
@@ -139,7 +139,7 @@ Resources:
         - !Ref LambdaExecutionRoleArn
         - !Sub arn:aws:iam::${AWS::AccountId}:role/${LambdaExecutionRoleName}
       Timeout: 900
-      MemorySize: 512
+      MemorySize: 10240
       Code:
         ZipFile: |
           def lambda_handler(event, context):

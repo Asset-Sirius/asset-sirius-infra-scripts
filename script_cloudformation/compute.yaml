@@ -108,10 +108,10 @@ Resources:
         apt-get install -y docker.io
         systemctl enable --now docker
 
-        # Install docker-compose (standalone binary)
+        # Install docker-compose (standalone binary) - use latest release to match docker API
         DOCKER_COMPOSE=/usr/local/bin/docker-compose
         if [ ! -f "$DOCKER_COMPOSE" ]; then
-          curl -L "https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-$(uname -s)-$(uname -m)" -o $DOCKER_COMPOSE
+          curl -fSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" -o $DOCKER_COMPOSE
           chmod +x $DOCKER_COMPOSE
         fi
 
@@ -176,12 +176,11 @@ Resources:
               - "80:80"
             restart: always
 
-        volumes:
-          grafana-data:
-            driver: local
+        
         EOF
 
-        # Start the compose stack
+        # Ensure Grafana data dir ownership (Grafana runs as UID 472) and start the compose stack
+        chown -R 472:472 /mnt/grafana-data
         /usr/local/bin/docker-compose -f /opt/grafana-compose.yml up -d
 
         # Note: Athena plugin requires AWS credentials. Prefer an IAM Role attached to the EC2 instance (Instance Profile).
