@@ -25,10 +25,15 @@ Parameters:
       Nome do Key Pair EC2 (chave .pem já existente na conta).
       CloudFormation não entrega o arquivo .pem, apenas associa a chave existente.
 
-  InstanceType:
+  InstanceTypeNodeJs:
     Type: String
     Default: t2.micro
-    Description: Tipo das instâncias EC2 (padrão t2.micro)
+    Description: Tipo das instâncias EC2 do Node.js
+  
+  InstanceTypeGrafana:
+    Type: String
+    Default: t2.medium
+    Description: Tipo das instâncias EC2 do Grafana
 
   UbuntuAmiId:
     Type: String
@@ -55,7 +60,7 @@ Resources:
   NodeJsEc2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: !Ref InstanceType
+      InstanceType: !Ref InstanceTypeNodeJs
       ImageId: !Ref UbuntuAmiId
       KeyName: !Ref KeyName
       IamInstanceProfile: !Ref Ec2DefaultInstanceProfile
@@ -87,7 +92,7 @@ Resources:
   GrafanaEc2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: !Ref InstanceType
+      InstanceType: !Ref InstanceTypeGrafana
       ImageId: !Ref UbuntuAmiId
       KeyName: !Ref KeyName
       IamInstanceProfile: !Ref Ec2DefaultInstanceProfile
@@ -202,6 +207,38 @@ Resources:
       VolumeId: !Ref GrafanaEbsVolume
       Device: /dev/xvdh
 
+  # Elastic IP for Node.js EC2
+  NodeJsEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: asset-sirius-eip-nodejs
+
+  NodeJsEipAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      # For VPC Elastic IPs the allocation identifier must be used (eipalloc-...)
+      AllocationId: !GetAtt NodeJsEip.AllocationId
+      InstanceId: !Ref NodeJsEc2Instance
+
+  # Elastic IP for Grafana EC2
+  GrafanaEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: asset-sirius-eip-grafana
+
+  GrafanaEipAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      # For VPC Elastic IPs the allocation identifier must be used (eipalloc-...)
+      AllocationId: !GetAtt GrafanaEip.AllocationId
+      InstanceId: !Ref GrafanaEc2Instance
+
 Outputs:
   NodeJsEc2InstanceId:
     Description: ID da instância EC2 Node.js
@@ -210,4 +247,12 @@ Outputs:
   GrafanaEc2InstanceId:
     Description: ID da instância EC2 Grafana
     Value: !Ref GrafanaEc2Instance
+  
+  NodeJsEipPublicIp:
+    Description: Public IP (Elastic) associado à instância Node.js
+    Value: !GetAtt NodeJsEip.PublicIp
+
+  GrafanaEipPublicIp:
+    Description: Public IP (Elastic) associado à instância Grafana
+    Value: !GetAtt GrafanaEip.PublicIp
 
