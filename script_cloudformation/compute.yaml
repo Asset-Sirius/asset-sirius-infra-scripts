@@ -46,6 +46,31 @@ Parameters:
     Default: arn:aws:iam::852131219041:role/LabRole
     Description: ARN do IAM Role padrão anexado às EC2 via Instance Profile
 
+  DbHost:
+    Type: String
+    Description: Endpoint do RDS (output RdsEndpointAddress da stack storage)
+
+  DbPort:
+    Type: String
+    Default: '3306'
+    Description: Porta do RDS MySQL
+
+  DbUser:
+    Type: String
+    Default: usr_asset_sirius
+    Description: Usuário do RDS (MasterUsername da stack storage)
+
+  DbPassword:
+    Type: String
+    NoEcho: true
+    Default: 12345678
+    Description: Senha do RDS (MasterUserPassword da stack storage)
+
+  DbName:
+    Type: String
+    Default: assetsiriusdb
+    Description: Nome do banco (DBName da stack storage)
+
 Resources:
   Ec2DefaultInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -71,19 +96,25 @@ Resources:
         - Key: Name
           Value: asset-sirius-ec2-nodejs
       # Script de startup (UserData) - inicia o container backend em Docker
-      UserData: !Base64 |
-        #!/bin/bash
-        set -e
-        apt-get update -y
-        apt-get install -y docker.io
-        systemctl enable --now docker
+      UserData: !Base64
+        Fn::Sub: |
+          #!/bin/bash
+          set -e
+          apt-get update -y
+          apt-get install -y docker.io
+          systemctl enable --now docker
 
-        # Pull and run backend container (assume app listens on 8080)
-        docker pull lucsss487474/asset-sirius-images:backend || true
-        if docker ps -a --format '{{.Names}}' | grep -q '^asset-sirius-backend$'; then
-          docker rm -f asset-sirius-backend || true
-        fi
-        docker run -d --name asset-sirius-backend --restart=always -p 8080:8080 lucsss487474/asset-sirius-images:backend
+          docker pull lucsss487474/asset-sirius-images:backend || true
+          if docker ps -a --format '{{.Names}}' | grep -q '^asset-sirius-backend$'; then
+            docker rm -f asset-sirius-backend || true
+          fi
+          docker run -d --name asset-sirius-backend --restart=always -p 8080:8080 \
+            -e DB_HOST='${DbHost}' \
+            -e DB_PORT='${DbPort}' \
+            -e DB_USER='${DbUser}' \
+            -e DB_PASSWORD='${DbPassword}' \
+            -e DB_NAME='${DbName}' \
+            lucsss487474/asset-sirius-images:backend
 
   # ---------------------------
   # EC2 - Grafana
@@ -179,6 +210,10 @@ Resources:
             container_name: asset-sirius-frontend
             ports:
               - "80:80"
+            environment:
+              - VITE_BACKEND_HOST=10.0.1.26
+              - VITE_BACKEND_PORT=8080
+              - VITE_GRAFANA_HOST=18.235.84.62:3000
             restart: always
 
         
@@ -255,4 +290,3 @@ Outputs:
   GrafanaEipPublicIp:
     Description: Public IP (Elastic) associado à instância Grafana
     Value: !GetAtt GrafanaEip.PublicIp
-
