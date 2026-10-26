@@ -72,6 +72,15 @@ Parameters:
     Default: assetsiriusdb
     Description: Nome do banco (DBName da stack storage)
 
+  # AllocationIds dos EIPs (criados em stack separada asset-sirius-eips)
+  GrafanaEipAllocationId:
+    Type: String
+    Description: "AllocationId do Elastic IP reservado para Grafana (ex: eipalloc-01234567)"
+
+  NodeEipAllocationId:
+    Type: String
+    Description: "AllocationId do Elastic IP reservado para Node.js (ex: eipalloc-89abcdef)"
+
 Resources:
   Ec2DefaultInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -234,9 +243,9 @@ Resources:
             ports:
               - "80:80"
             environment:
-              - VITE_BACKEND_HOST=10.0.1.26
+              - VITE_BACKEND_HOST=10.0.1.85
               - VITE_BACKEND_PORT=8080
-              - VITE_GRAFANA_HOST=18.235.84.62:3000
+              - VITE_GRAFANA_HOST=54.84.129.93:3000
             restart: always
 
         
@@ -266,12 +275,25 @@ Resources:
       VolumeId: !Ref GrafanaEbsVolume
       Device: /dev/xvdh
 
-  # NOTE: Elastic IPs and their associations were moved to a separate stack.
-  # Use the eips template to create/manage Elastic IPs independently so compute
-  # stack updates won't recreate or replace them. Current generated template is
-  # located at: script_cloudformation/script_cloudformation/eips.yaml
-  # The eips stack expects two parameters: NodeJsInstanceId and GrafanaInstanceId
-  # (AWS::EC2::Instance::Id) to associate EIPs to existing instances.
+  # EIP associations: use AllocationIds passed as parameters to associate the
+  # reserved Elastic IPs (created in asset-sirius-eips) to the instances here.
+  NodeEipAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !Ref NodeEipAllocationId
+      InstanceId: !Ref NodeJsEc2Instance
+
+  GrafanaEipAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !Ref GrafanaEipAllocationId
+      InstanceId: !Ref GrafanaEc2Instance
+
+  # NOTE: Elastic IPs are created in a separate stack (asset-sirius-eips).
+  # That stack reserves AllocationIds for EIPs. This compute stack receives
+  # the AllocationIds via parameters and creates EIPAssociation resources to
+  # attach the reserved EIPs to the instances created here. This avoids
+  # replacing EIPs when the compute stack is updated.
 
 Outputs:
   NodeJsEc2InstanceId:

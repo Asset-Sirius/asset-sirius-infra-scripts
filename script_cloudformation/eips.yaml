@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Separate stack to create and associate Elastic IPs to existing EC2 instances.
+  This allows managing EIPs independently from the compute stack so updates to
+  compute do not recreate or replace Elastic IPs.
+Description: >-
+  Stack to allocate Elastic IPs for Node.js and Grafana. This template only
+  allocates the EIPs (Domain: vpc) and exports their AllocationIds and Public
+  IPs. Associations to instances are handled by the compute stack using the
+  AllocationIds.
+
+Resources:
+  NodeJsEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: asset-sirius-eip-nodejs
+
+  GrafanaEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: asset-sirius-eip-grafana
+
+Outputs:
+  NodeEipAllocationId:
+    Description: AllocationId do EIP reservado para Node.js (ex: eipalloc-01234567)
+    Value: !GetAtt NodeJsEip.AllocationId
+
+  NodeEipPublicIp:
+    Description: Public IP do EIP reservado para Node.js
+    Value: !Ref NodeJsEip
+
+  GrafanaEipAllocationId:
+    Description: AllocationId do EIP reservado para Grafana (ex: eipalloc-89abcdef)
+    Value: !GetAtt GrafanaEip.AllocationId
+
+  GrafanaEipPublicIp:
+    Description: Public IP do EIP reservado para Grafana
+    Value: !Ref GrafanaEip

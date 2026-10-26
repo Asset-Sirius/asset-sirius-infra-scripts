@@ -1,6 +1,7 @@
 import json
 import boto3
 import time
+import re
 from botocore.exceptions import ClientError
 
 cloudformation = boto3.client('cloudformation')
@@ -52,9 +53,12 @@ STACKS_CONFIG = [
             'GrafanaSubnetId': 'PublicSubnetId',  # Output da stack network (subnet pública 1)
             'NodeJsSecurityGroupId': 'NodeJsEc2SecurityGroupId',  # Output da stack security
             'NodeJsSubnetId': 'PrivateSubnet1Id',  # Extraído de PrivateSubnetIds da network
-            'KeyName': 'testeKiteria'  # Key pair para acesso SSH às EC2
+            'KeyName': 'testeKiteria',  # Key pair para acesso SSH às EC2
+            # AllocationIds providos pela stack de EIPs criada dinamicamente
+            'GrafanaEipAllocationId': 'GrafanaEipAllocationId',
+            'NodeEipAllocationId': 'NodeEipAllocationId'
         },
-        'depends_on': ['asset-sirius-network', 'asset-sirius-security', 'asset-sirius-storage']
+        'depends_on': ['asset-sirius-network', 'asset-sirius-security', 'asset-sirius-storage', 'asset-sirius-eips']
     }
 ]
 
@@ -256,6 +260,33 @@ def create_stack(stack_config, template_bucket, template_key_prefix, stack_outpu
             outputs = get_stack_outputs(stack_name)
             stack_outputs_map[stack_name] = outputs
             print(f"Outputs da stack {stack_name}: {outputs}")
+
+            # Se esta for a stack de EIPs, logar detalhes das alocações/IPs
+            template_lower = template_file.lower() if template_file else ''
+            if 'eip' in stack_name.lower() or 'eip' in template_lower or 'epis' in template_lower:
+                print("Detalhes de EIPs criados:")
+                # regex simples para detectar IPv4
+                ip_regex = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+
+                # Imprime chaves relevantes (AllocationId, PublicIp, Address, etc.)
+                for k, v in outputs.items():
+                    try:
+                        is_ip = isinstance(v, str) and bool(ip_regex.match(v))
+                    except Exception:
+                        is_ip = False
+
+                    key_lower = k.lower()
+                    if ('allocation' in key_lower) or ('allocationid' in key_lower) or ('publicip' in key_lower) or ('address' in key_lower) or is_ip:
+                        print(f"  - {k}: {v}")
+
+                # Trate outputs que sejam listas separadas por vírgula (ex: PrivateSubnetIds, ou listas de IPs/allocations)
+                for k, v in outputs.items():
+                    if isinstance(v, str) and ',' in v:
+                        parts = [p.strip() for p in v.split(',') if p.strip()]
+                        if any(ip_regex.match(p) for p in parts) or any('eipalloc' in p.lower() or p.lower().startswith('alloc') for p in parts):
+                            print(f"  - {k}:")
+                            for p in parts:
+                                print(f"     - {p}")
         
         return success
         
@@ -268,6 +299,9 @@ def create_stack(stack_config, template_bucket, template_key_prefix, stack_outpu
         else:
             print(f"Erro ao criar stack {stack_name}: {str(e)}")
             return False
+
+
+
 
 def update_stack(stack_name, template_body, parameters, stack_outputs_map):
     """
@@ -360,6 +394,22 @@ def lambda_handler(event, context):
     
     try:
         # Cria cada stack na ordem correta
+        # Primeiro, criar a stack de EIPs definida em script_cloudformation/eips.yaml
+        print("Iniciando criação da stack de EIPs (asset-sirius-eips) usando template eips.yaml")
+        eips_config = {
+            'name': 'asset-sirius-eips',
+            'template': 'eips.yaml',
+            'parameters': {},
+            'depends_on': []
+        }
+        eips_success = create_stack(eips_config, template_bucket, template_key_prefix, stack_outputs_map)
+        if not eips_success:
+            print("✗ FALHA: Não foi possível criar a stack de EIPs. Parando orquestração.")
+            return {
+                'statusCode': 500,
+                'body': json.dumps({'error': 'Falha ao criar stack de EIPs'})
+            }
+
         for stack_config in STACKS_CONFIG:
             stack_name = stack_config['name']
             
