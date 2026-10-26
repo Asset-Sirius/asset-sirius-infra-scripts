@@ -64,10 +64,12 @@ Resources:
           ToPort: 80
           CidrIp: !Ref AppAccessCidr
         # Porta da aplicação Node.js
+        # Restringir acesso à porta da aplicação (8080) apenas ao Security Group do Grafana
         - IpProtocol: tcp
           FromPort: !Ref NodeAppPort
           ToPort: !Ref NodeAppPort
-          CidrIp: !Ref AppAccessCidr
+          # Em VPC, permitir tráfego originado do Security Group do Grafana
+          SourceSecurityGroupId: !Ref GrafanaEc2SecurityGroup
       SecurityGroupEgress:
         - IpProtocol: -1
           FromPort: 0

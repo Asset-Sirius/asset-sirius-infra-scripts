@@ -102,6 +102,8 @@ Resources:
       SubnetId: !Ref NodeJsSubnetId
       SecurityGroupIds:
         - !Ref NodeJsSecurityGroupId
+      # Fixar IP privado para manter o endereço estável entre recriações
+      PrivateIpAddress: 10.0.1.10
       Tags:
         - Key: Name
           Value: asset-sirius-ec2-nodejs
@@ -243,9 +245,12 @@ Resources:
             ports:
               - "80:80"
             environment:
-              - VITE_BACKEND_HOST=10.0.1.64
+              # Usar o IP privado do Node (acessado via nginx interno)
+              - VITE_BACKEND_HOST=10.0.1.10
               - VITE_BACKEND_PORT=8080
-              - VITE_GRAFANA_HOST=54.84.129.93:3000
+              # Manter o host público do Grafana (iframe é carregado pelo navegador).
+              # Adicionar http:// para evitar caminho relativo no iframe
+              - VITE_GRAFANA_HOST=http://54.84.129.93:3000
             restart: always
 
         
