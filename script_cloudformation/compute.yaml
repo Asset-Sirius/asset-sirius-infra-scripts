@@ -243,7 +243,7 @@ Resources:
             ports:
               - "80:80"
             environment:
-              - VITE_BACKEND_HOST=10.0.1.85
+              - VITE_BACKEND_HOST=10.0.1.64
               - VITE_BACKEND_PORT=8080
               - VITE_GRAFANA_HOST=54.84.129.93:3000
             restart: always
