@@ -48,6 +48,7 @@ Parameters:
 
   DbHost:
     Type: String
+    Default: asset-sirius-storage-rdsmysqlinstance-vjfqluga5lbv.cjyng9bj01m1.us-east-1.rds.amazonaws.com
     Description: Endpoint do RDS (output RdsEndpointAddress da stack storage)
 
   DbPort:
@@ -101,8 +102,23 @@ Resources:
           #!/bin/bash
           set -e
           apt-get update -y
-          apt-get install -y docker.io
+          # Install Docker (official repo) to ensure a matching client/server and the compose plugin
+          apt-get remove -y docker docker-engine docker.io containerd runc || true
+          apt-get install -y ca-certificates curl gnupg lsb-release
+          mkdir -p /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+          apt-get update -y
+          apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
           systemctl enable --now docker
+
+          # wait for docker daemon to be ready before using the client
+          for i in {1..30}; do
+            if docker info >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
 
           docker pull lucsss487474/asset-sirius-images:backend || true
           if docker ps -a --format '{{.Names}}' | grep -q '^asset-sirius-backend$'; then
@@ -140,16 +156,23 @@ Resources:
         apt-get update -y
         apt-get install -y apt-transport-https ca-certificates curl jq
 
-        # Install Docker
-        apt-get install -y docker.io
+        # Install Docker (official repo) + docker compose plugin
+        apt-get remove -y docker docker-engine docker.io containerd runc || true
+        apt-get install -y ca-certificates curl gnupg lsb-release
+        mkdir -p /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+        apt-get update -y
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
         systemctl enable --now docker
 
-        # Install docker-compose (standalone binary) - use latest release to match docker API
-        DOCKER_COMPOSE=/usr/local/bin/docker-compose
-        if [ ! -f "$DOCKER_COMPOSE" ]; then
-          curl -fSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" -o $DOCKER_COMPOSE
-          chmod +x $DOCKER_COMPOSE
-        fi
+        # wait for docker daemon to be ready before using the client
+        for i in {1..30}; do
+          if docker info >/dev/null 2>&1; then
+            break
+          fi
+          sleep 1
+        done
 
         # Prepare mount point for persistent Grafana data
         mkdir -p /mnt/grafana-data
@@ -221,7 +244,8 @@ Resources:
 
         # Ensure Grafana data dir ownership (Grafana runs as UID 472) and start the compose stack
         chown -R 472:472 /mnt/grafana-data
-        /usr/local/bin/docker-compose -f /opt/grafana-compose.yml up -d
+        # use the docker compose plugin which was installed as part of the docker packages
+        docker compose -f /opt/grafana-compose.yml up -d
 
         # Note: Athena plugin requires AWS credentials. Prefer an IAM Role attached to the EC2 instance (Instance Profile).
 
@@ -242,37 +266,12 @@ Resources:
       VolumeId: !Ref GrafanaEbsVolume
       Device: /dev/xvdh
 
-  # Elastic IP for Node.js EC2
-  NodeJsEip:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-      Tags:
-        - Key: Name
-          Value: asset-sirius-eip-nodejs
-
-  NodeJsEipAssociation:
-    Type: AWS::EC2::EIPAssociation
-    Properties:
-      # For VPC Elastic IPs the allocation identifier must be used (eipalloc-...)
-      AllocationId: !GetAtt NodeJsEip.AllocationId
-      InstanceId: !Ref NodeJsEc2Instance
-
-  # Elastic IP for Grafana EC2
-  GrafanaEip:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-      Tags:
-        - Key: Name
-          Value: asset-sirius-eip-grafana
-
-  GrafanaEipAssociation:
-    Type: AWS::EC2::EIPAssociation
-    Properties:
-      # For VPC Elastic IPs the allocation identifier must be used (eipalloc-...)
-      AllocationId: !GetAtt GrafanaEip.AllocationId
-      InstanceId: !Ref GrafanaEc2Instance
+  # NOTE: Elastic IPs and their associations were moved to a separate stack.
+  # Use the eips template to create/manage Elastic IPs independently so compute
+  # stack updates won't recreate or replace them. Current generated template is
+  # located at: script_cloudformation/script_cloudformation/eips.yaml
+  # The eips stack expects two parameters: NodeJsInstanceId and GrafanaInstanceId
+  # (AWS::EC2::Instance::Id) to associate EIPs to existing instances.
 
 Outputs:
   NodeJsEc2InstanceId:
@@ -283,10 +282,4 @@ Outputs:
     Description: ID da instância EC2 Grafana
     Value: !Ref GrafanaEc2Instance
   
-  NodeJsEipPublicIp:
-    Description: Public IP (Elastic) associado à instância Node.js
-    Value: !GetAtt NodeJsEip.PublicIp
-
-  GrafanaEipPublicIp:
-    Description: Public IP (Elastic) associado à instância Grafana
-    Value: !GetAtt GrafanaEip.PublicIp
+  # Elastic IP outputs were moved to the eips stack outputs.
