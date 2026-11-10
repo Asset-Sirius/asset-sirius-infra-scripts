@@ -212,107 +212,108 @@ Resources:
         - Key: TargetGroupArn
           Value: !Ref TargetGroupArn
       # Script de startup (UserData) - instalação básica do Grafana em Ubuntu
-      UserData: !Base64 |
-        #!/bin/bash
-        set -e
-        apt-get update -y
-        apt-get install -y apt-transport-https ca-certificates curl jq
+      UserData: !Base64
+        Fn::Sub: |
+          #!/bin/bash
+          set -e
+          apt-get update -y
+          apt-get install -y apt-transport-https ca-certificates curl jq
 
-        # Install Docker (official repo) + docker compose plugin
-        apt-get remove -y docker docker-engine docker.io containerd runc || true
-        apt-get install -y ca-certificates curl gnupg lsb-release
-        mkdir -p /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-        apt-get update -y
-        apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-        systemctl enable --now docker
+          # Install Docker (official repo) + docker compose plugin
+          apt-get remove -y docker docker-engine docker.io containerd runc || true
+          apt-get install -y ca-certificates curl gnupg lsb-release
+          mkdir -p /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+          apt-get update -y
+          apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+          systemctl enable --now docker
 
-        # wait for docker daemon to be ready before using the client
-        for i in {1..30}; do
-          if docker info >/dev/null 2>&1; then
-            break
+          # wait for docker daemon to be ready before using the client
+          for i in {1..30}; do
+            if docker info >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          # Prepare mount point for persistent Grafana data
+          mkdir -p /mnt/grafana-data
+
+          # Try to detect the attached EBS device (/dev/xvdh by convention). If not present, wait briefly.
+          DEVICE=/dev/xvdh
+          for i in {1..20}; do
+            if [ -b "$DEVICE" ]; then
+              break
+            fi
+            sleep 3
+          done
+
+          # Fallback: try NVMe detection (for Nitro instances)
+          if [ ! -b "$DEVICE" ]; then
+            NVME_DEV=$(ls /dev/nvme*n1 2>/dev/null | head -n1 || true)
+            if [ -n "$NVME_DEV" ]; then
+              DEVICE=$NVME_DEV
+            fi
           fi
-          sleep 1
-        done
 
-        # Prepare mount point for persistent Grafana data
-        mkdir -p /mnt/grafana-data
-
-        # Try to detect the attached EBS device (/dev/xvdh by convention). If not present, wait briefly.
-        DEVICE=/dev/xvdh
-        for i in {1..20}; do
+          # If device exists and has no filesystem, create one and mount it
           if [ -b "$DEVICE" ]; then
-            break
+            if ! blkid $DEVICE >/dev/null 2>&1; then
+              mkfs.ext4 -F $DEVICE
+            fi
+            # Ensure fstab entry by UUID so mount survives reboots
+            UUID=$(blkid -s UUID -o value $DEVICE)
+            if ! grep -q "$UUID" /etc/fstab 2>/dev/null; then
+              echo "UUID=$UUID /mnt/grafana-data ext4 defaults,nofail 0 2" >> /etc/fstab
+            fi
+            mount -a || true
           fi
-          sleep 3
-        done
 
-        # Fallback: try NVMe detection (for Nitro instances)
-        if [ ! -b "$DEVICE" ]; then
-          NVME_DEV=$(ls /dev/nvme*n1 2>/dev/null | head -n1 || true)
-          if [ -n "$NVME_DEV" ]; then
-            DEVICE=$NVME_DEV
-          fi
-        fi
+          # Create compose file for Grafana + frontend
+          cat > /opt/grafana-compose.yml <<'EOF'
+          version: '3.8'
+          services:
+            grafana:
+              image: grafana/grafana:latest
+              container_name: grafana
+              ports:
+                - "3000:3000"
+              environment:
+                - GF_SECURITY_ALLOW_EMBEDDING=true
+                - GF_SECURITY_COOKIE_SECURE=false
+                - GF_SECURITY_COOKIE_SAMESITE=lax
+                - GF_AUTH_ANONYMOUS_ENABLED=true
+                - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
+                - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+                - GF_INSTALL_PLUGINS=grafana-athena-datasource
+              volumes:
+                - /mnt/grafana-data:/var/lib/grafana
+              restart: always
 
-        # If device exists and has no filesystem, create one and mount it
-        if [ -b "$DEVICE" ]; then
-          if ! blkid $DEVICE >/dev/null 2>&1; then
-            mkfs.ext4 -F $DEVICE
-          fi
-          # Ensure fstab entry by UUID so mount survives reboots
-          UUID=$(blkid -s UUID -o value $DEVICE)
-          if ! grep -q "$UUID" /etc/fstab 2>/dev/null; then
-            echo "UUID=$UUID /mnt/grafana-data ext4 defaults,nofail 0 2" >> /etc/fstab
-          fi
-          mount -a || true
-        fi
-
-        # Create compose file for Grafana + frontend
-        cat > /opt/grafana-compose.yml <<'EOF'
-        version: '3.8'
-        services:
-          grafana:
-            image: grafana/grafana:latest
-            container_name: grafana
-            ports:
-              - "3000:3000"
-            environment:
-              - GF_SECURITY_ALLOW_EMBEDDING=true
-              - GF_SECURITY_COOKIE_SECURE=false
-              - GF_SECURITY_COOKIE_SAMESITE=lax
-              - GF_AUTH_ANONYMOUS_ENABLED=true
-              - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
-              - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-              - GF_INSTALL_PLUGINS=grafana-athena-datasource
-            volumes:
-              - /mnt/grafana-data:/var/lib/grafana
-            restart: always
-
-          frontend:
-            image: lucsss487474/asset-sirius-images:frontend
-            container_name: asset-sirius-frontend
-            ports:
-              - "80:80"
-            environment:
-              # Usar o IP privado do Node (acessado via nginx interno)
-              - VITE_BACKEND_HOST=10.0.1.10
-              - VITE_BACKEND_PORT=8080
-              # Manter o host público do Grafana (iframe é carregado pelo navegador).
-              # Adicionar http:// para evitar caminho relativo no iframe
-              - VITE_GRAFANA_HOST=http://54.84.129.93:3000
-            restart: always
+            frontend:
+              image: lucsss487474/asset-sirius-images:frontend
+              container_name: asset-sirius-frontend
+              ports:
+                - "80:80"
+              environment:
+                # Usar o IP privado do Node (acessado via nginx interno)
+                - VITE_BACKEND_HOST=10.0.1.10
+                - VITE_BACKEND_PORT=8080
+                # Grafana publicado pelo ALB na porta 3000 (sem IP público hardcoded).
+                # Adicionar http:// para evitar caminho relativo no iframe
+                - VITE_GRAFANA_HOST=http://${AlbDns}:3000
+              restart: always
 
         
-        EOF
+          EOF
 
-        # Ensure Grafana data dir ownership (Grafana runs as UID 472) and start the compose stack
-        chown -R 472:472 /mnt/grafana-data
-        # use the docker compose plugin which was installed as part of the docker packages
-        docker compose -f /opt/grafana-compose.yml up -d
+          # Ensure Grafana data dir ownership (Grafana runs as UID 472) and start the compose stack
+          chown -R 472:472 /mnt/grafana-data
+          # use the docker compose plugin which was installed as part of the docker packages
+          docker compose -f /opt/grafana-compose.yml up -d
 
-        # Note: Athena plugin requires AWS credentials. Prefer an IAM Role attached to the EC2 instance (Instance Profile).
+          # Note: Athena plugin requires AWS credentials. Prefer an IAM Role attached to the EC2 instance (Instance Profile).
 
   # ---------------------------
   # EC2 - segunda instância do frontend (alvo do ALB)
