@@ -20,6 +20,14 @@ Parameters:
     Default: 80
     Description: Porta da aplicacao frontend nas instancias (porta do Target Group)
 
+  GrafanaPort:
+    Type: Number
+    Default: 3000
+    Description: >-
+      Porta do Grafana nas instancias (porta do Target Group do Grafana).
+      O Grafana so roda na instancia principal; a segunda instancia do
+      frontend apenas aponta para o Grafana publicado por este ALB.
+
   HealthCheckPath:
     Type: String
     Default: /
@@ -40,6 +48,12 @@ Resources:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
+          CidrIp: 0.0.0.0/0
+        # Entrada publica do Grafana (o frontend embute o Grafana via iframe
+        # apontando para o DNS deste ALB na porta 3000)
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
           CidrIp: 0.0.0.0/0
       SecurityGroupEgress:
         # Saida para as instancias (porta AppPort) e para a internet
@@ -68,6 +82,29 @@ Resources:
       Tags:
         - Key: Name
           Value: asset-sirius-alb-target-group
+
+  # ---------------------------
+  # Target Group do Grafana
+  # ---------------------------
+  # Target group separado porque a porta e diferente (3000). Um listener na
+  # porta 3000 apontando para o TargetGroup do frontend (porta 80) entregaria
+  # o trafego do Grafana na porta errada.
+  # Apenas a instancia que roda o Grafana e registrada como alvo (pelo
+  # orquestrador), para que os dashboards nao divirjam entre instancias.
+
+  AlbGrafanaTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Port: !Ref GrafanaPort
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckPath: !Ref HealthCheckPath
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: !Ref GrafanaPort
+      Tags:
+        - Key: Name
+          Value: asset-sirius-alb-target-group-grafana
 
   # ---------------------------
   # Load Balancer
@@ -101,12 +138,32 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
 
+  # ---------------------------
+  # Listener 3000 -> Target Group do Grafana
+  # ---------------------------
+
+  AlbGrafanaListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref AlbLoadBalancer
+      Port: 3000
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbGrafanaTargetGroup
+
 Outputs:
   TargetGroupArn:
     Description: ARN do Target Group do ALB (parametro da stack de compute)
     Value: !Ref AlbTargetGroup
     Export:
       Name: !Sub '${AWS::StackName}-TargetGroupArn'
+
+  GrafanaTargetGroupArn:
+    Description: ARN do Target Group do Grafana (registrado pelo orquestrador)
+    Value: !Ref AlbGrafanaTargetGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-GrafanaTargetGroupArn'
 
   AlbSgId:
     Description: ID do Security Group do ALB (parametro da stack de compute)

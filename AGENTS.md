@@ -5,12 +5,13 @@ Explica a função e dependências dos diretórios script_cloudformation e n8n-l
 - O que é: coleção de templates CloudFormation separados por responsabilidade.
 - Principais templates:
   - network.yaml — VPC, subnets, IGW, NAT, route tables.
-    - Outputs obrigatórios: VpcId, PublicSubnetId, PrivateSubnetIds (vírgula-separated), PublicSubnetIds (vírgula-separated, subnets públicas do ALB).
-  - eips.yaml — reserva EIPs e exporta AllocationIds/PublicIps.
+    - Outputs obrigatórios: VpcId, PublicSubnetId, PublicSubnet2Id, PrivateSubnetIds (vírgula-separated), PublicSubnetIds (vírgula-separated, subnets públicas do ALB).
+  - eips.yaml — reserva EIPs e exporta AllocationIds/PublicIps (Node.js, Grafana e 2ª instância do frontend).
   - pipeline.yaml — Lambdas e Glue.
-  - alb.yaml — ALB internet-facing (porta 80), SG do ALB e Target Group da aplicação frontend.
+  - alb.yaml — ALB internet-facing (porta 80), SG do ALB e dois Target Groups.
+    - Target Group do frontend (porta 80) e Target Group do Grafana (porta 3000), com listeners 80 e 3000.
     - Depende de: Network (VpcId, PublicSubnetIds).
-    - Outputs: TargetGroupArn, AlbSgId, AlbDns (com Export ${AWS::StackName}-...).
+    - Outputs: TargetGroupArn, GrafanaTargetGroupArn, AlbSgId, AlbDns (com Export ${AWS::StackName}-...).
   - security.yaml — Security Groups (NodeJs, Grafana, RDS).
     - Outputs: NodeJsEc2SecurityGroupId, GrafanaEc2SecurityGroupId, RdsSecurityGroupId.
     - A porta do frontend (80) não é liberada aqui: o acesso direto é bloqueado e a entrada passa a vir do SG do ALB (regra criada em compute.yaml).
@@ -18,10 +19,13 @@ Explica a função e dependências dos diretórios script_cloudformation e n8n-l
     - Depende de: PrivateSubnet2Id, PrivateSubnet3Id (extraídos de PrivateSubnetIds) e RdsSecurityGroupId.
     - Outputs: nomes de buckets e endpoint/porta do RDS.
   - crawler.yaml — Glue Crawler que varre s3://asset-sirius-gold/cvm/.
-  - compute.yaml — EC2 Node.js e Grafana, EBS volume, associa EIPs.
-    - Depende de: Security (SGs), Network (subnets), EIPs (AllocationIds), ALB (TargetGroupArn, AlbSgId).
-    - A entrada HTTP da instância Grafana/Frontend vem só do SG do ALB (ingress em compute.yaml).
-    - O registro da instância como alvo do Target Group é feito pelo orquestrador (n8n-lambda.py): o CloudFormation não tem recurso para registrar alvo de outra stack.
+  - compute.yaml — EC2 Node.js, EC2 Grafana+frontend e segunda EC2 do frontend, EBS volume, associa EIPs.
+    - Depende de: Security (SGs), Network (subnets), EIPs (AllocationIds), ALB (TargetGroupArn, AlbSgId, AlbDns).
+    - A entrada HTTP das instâncias que servem o frontend vem só do SG do ALB (ingress em compute.yaml).
+    - O registro dos alvos no Target Group é feito pelo orquestrador (n8n-lambda.py): o CloudFormation não tem recurso para registrar alvo de outra stack.
+    - Frontend servido por 2 instâncias (GrafanaEc2Instance na subnet pública 1 e FrontendEc2Instance2 na subnet pública 2/us-east-1b, só frontend).
+    - O Grafana roda apenas na instância principal e é publicado pelo ALB na porta 3000 (o frontend usa o DNS do ALB, sem IP hardcoded).
+    - FrontendEc2Instance2 usa o mesmo SG da instância principal (é o que libera o ALB na porta 80 e o backend Node.js na 8080).
 - deploy.yaml — cria bucket infra e placeholder Lambda (uso opcional).
 - Ordem de deploy (usada pelo orquestrador):
   1. asset-sirius-eips (eips.yaml)

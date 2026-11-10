@@ -11,6 +11,13 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
     Description: Subnet (ID) onde a EC2 Grafana será criada
 
+  Frontend2SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: >-
+      Subnet (ID) da segunda instância do frontend. Deve ser uma subnet
+      pública em outra AZ (us-east-1b) para que o ALB distribute a carga
+      entre as duas instâncias sem ponto único de falha.
+
   NodeJsSecurityGroupId:
     Type: AWS::EC2::SecurityGroup::Id
     Description: Security Group da EC2 Node.js (stack security)
@@ -34,6 +41,14 @@ Parameters:
     Type: String
     Default: t2.medium
     Description: Tipo das instâncias EC2 do Grafana
+
+  InstanceTypeFrontend2:
+    Type: String
+    Default: t2.small
+    Description: >-
+      Tipo da segunda instância EC2 do frontend. Ela não roda o Grafana
+      (apenas o container do frontend), por isso não precisa do mesmo tamanho
+      da instância principal.
 
   UbuntuAmiId:
     Type: String
@@ -81,6 +96,10 @@ Parameters:
     Type: String
     Description: "AllocationId do Elastic IP reservado para Node.js (ex: eipalloc-89abcdef)"
 
+  Frontend2EipAllocationId:
+    Type: String
+    Description: "AllocationId do Elastic IP reservado para a 2a instância do frontend"
+
   # ---------------------------
   # Load Balancer (stack asset-sirius-alb)
   # ---------------------------
@@ -97,6 +116,13 @@ Parameters:
     Type: String
     Description: >-
       ID do Security Group do ALB (output AlbSgId da stack asset-sirius-alb)
+
+  AlbDns:
+    Type: String
+    Description: >-
+      DNS name publico do ALB (output AlbDns da stack asset-sirius-alb).
+      Usado pelo frontend para carregar o Grafana (iframe) pelo ALB,
+      em vez de um IP publico hardcoded.
 
   AppPort:
     Type: Number
@@ -289,6 +315,80 @@ Resources:
         # Note: Athena plugin requires AWS credentials. Prefer an IAM Role attached to the EC2 instance (Instance Profile).
 
   # ---------------------------
+  # EC2 - segunda instância do frontend (alvo do ALB)
+  # ---------------------------
+  # Segunda instancia do frontend, criada em outra AZ (subnet publica 2) para
+  # que o ALB distribute a carga entre as duas sem ponto unico de falha.
+  # Ela roda SOMENTE o container do frontend: o Grafana continua apenas na
+  # instancia principal e e publicado pelo ALB (porta 3000), evitando que os
+  # dashboards divirjam entre instancias.
+  # O UserData e declarado novamente aqui porque o CloudFormation nao aceita
+  # YAML anchors/aliases - mantenha este bloco em sincronia com o da instancia
+  # principal caso o ambiente do frontend mude.
+
+  FrontendEc2Instance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceTypeFrontend2
+      ImageId: !Ref UbuntuAmiId
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref Ec2DefaultInstanceProfile
+      SubnetId: !Ref Frontend2SubnetId
+      # Mesmo Security Group da instancia principal: e o que libera o trafego
+      # do ALB (porta 80) e do backend Node.js (porta 8080).
+      SecurityGroupIds:
+        - !Ref GrafanaSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: asset-sirius-ec2-frontend-2
+        # Rastreabilidade do alvo do ALB (o registro e feito pelo orquestrador)
+        - Key: TargetGroupArn
+          Value: !Ref TargetGroupArn
+      # Script de startup (UserData) - sobe o container do frontend
+      UserData: !Base64
+        Fn::Sub: |
+          #!/bin/bash
+          set -e
+          apt-get update -y
+
+          # Install Docker (official repo) + docker compose plugin
+          apt-get remove -y docker docker-engine docker.io containerd runc || true
+          apt-get install -y ca-certificates curl gnupg lsb-release
+          mkdir -p /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+          apt-get update -y
+          apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+          systemctl enable --now docker
+
+          # wait for docker daemon to be ready before using the client
+          for i in {1..30}; do
+            if docker info >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          # Compose apenas com o frontend (sem Grafana nesta instancia)
+          cat > /opt/frontend-compose.yml <<'EOF'
+          services:
+            frontend:
+              image: lucsss487474/asset-sirius-images:frontend
+              container_name: asset-sirius-frontend
+              ports:
+                - "80:80"
+              environment:
+                # Backend Node.js (instancia unica na subnet privada 1)
+                - VITE_BACKEND_HOST=10.0.1.10
+                - VITE_BACKEND_PORT=8080
+                # Grafana publicado pelo ALB na porta 3000 (sem IP publico hardcoded)
+                - VITE_GRAFANA_HOST=http://${AlbDns}:3000
+              restart: always
+          EOF
+
+          docker compose -f /opt/frontend-compose.yml up -d
+
+  # ---------------------------
   # Load Balancer (ALB)
   # ---------------------------
 
@@ -334,6 +434,12 @@ Resources:
       AllocationId: !Ref GrafanaEipAllocationId
       InstanceId: !Ref GrafanaEc2Instance
 
+  Frontend2EipAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !Ref Frontend2EipAllocationId
+      InstanceId: !Ref FrontendEc2Instance2
+
   # NOTE: Elastic IPs are created in a separate stack (asset-sirius-eips).
   # That stack reserves AllocationIds for EIPs. This compute stack receives
   # the AllocationIds via parameters and creates EIPAssociation resources to
@@ -346,7 +452,20 @@ Outputs:
     Value: !Ref NodeJsEc2Instance
 
   GrafanaEc2InstanceId:
-    Description: ID da instância EC2 Grafana
+    Description: ID da instância EC2 Grafana (também serve o frontend)
     Value: !Ref GrafanaEc2Instance
+
+  FrontendEc2InstanceId2:
+    Description: ID da segunda instância EC2 do frontend
+    Value: !Ref FrontendEc2Instance2
+
+  FrontendEc2InstanceIds:
+    Description: >-
+      IDs das instâncias EC2 que servem o frontend, separados por vírgula.
+      Usado pelo orquestrador para registrar todos os alvos no Target Group do ALB.
+    Value: !Join
+      - ","
+      - - !Ref GrafanaEc2Instance
+        - !Ref FrontendEc2Instance2
   
   # Elastic IP outputs were moved to the eips stack outputs.

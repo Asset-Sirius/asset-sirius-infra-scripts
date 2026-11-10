@@ -4,12 +4,13 @@
 Script Python para Lambda que orquestra a criação de toda a infraestrutura AWS usando CloudFormation, seguindo uma ordem específica de dependências.
 
 ## Ordem de Criação (Garantida)
-1. **Network** - VPC, Subnets, Internet Gateway, NAT Gateway, Route Tables
-2. **ALB** - Application Load Balancer, SG do ALB e Target Group do frontend
-3. **Pipeline** - Recursos de pipeline (CodePipeline, CodeBuild, etc)
-4. **Security** - Security Groups, IAM Roles, Policies
-5. **Storage** - S3 Buckets, DynamoDB, etc
-6. **Compute** - EC2, Lambda, ECS, etc
+1. **EIPs** - Elastic IPs do Node.js, Grafana e da segunda instância do frontend
+2. **Network** - VPC, Subnets, Internet Gateway, NAT Gateway, Route Tables
+3. **ALB** - Application Load Balancer, SG do ALB, Target Groups (frontend e Grafana) e Listeners
+4. **Pipeline** - Recursos de pipeline (CodePipeline, CodeBuild, etc)
+5. **Security** - Security Groups, IAM Roles, Policies
+6. **Storage** - S3 Buckets, DynamoDB, etc
+7. **Compute** - EC2 (Node.js, Grafana+frontend e segunda instância do frontend)
 
 ## Características Principais
 ✓ Criação sequencial garantida - cada stack espera a anterior terminar  
@@ -27,12 +28,12 @@ Os templates devem estar nos locais corretos e definir outputs apropriados:
 
 | Stack | Template | Outputs Obrigatórios |
 |-------|----------|----------------------|
-| Network | `network.yaml` | `VpcId`, `PublicSubnetId`, `PublicSubnetIds`, `PrivateSubnetIds` |
-| ALB | `alb.yaml` | `TargetGroupArn`, `AlbSgId`, `AlbDns` |
+| Network | `network.yaml` | `VpcId`, `PublicSubnetId`, `PublicSubnet2Id`, `PublicSubnetIds`, `PrivateSubnetIds` |
+| ALB | `alb.yaml` | `TargetGroupArn`, `GrafanaTargetGroupArn`, `AlbSgId`, `AlbDns` |
 | Pipeline | `pipeline.yaml` | (nenhum obrigatório) |
 | Security | `security.yaml` | `NodeJsEc2SecurityGroupId`, `GrafanaEc2SecurityGroupId`, `RdsSecurityGroupId` |
 | Storage | `storage.yaml` | (nenhum obrigatório) |
-| Compute | `compute.yaml` | (nenhum obrigatório) |
+| Compute | `compute.yaml` | `GrafanaEc2InstanceId`, `FrontendEc2InstanceId2`, `FrontendEc2InstanceIds` |
 
 **Nota sobre PrivateSubnetIds:** O output `PrivateSubnetIds` deve ser um join com vírgulas (ex: `subnet-1,subnet-2,subnet-3`). O script extrai automaticamente cada subnet ID.
 
@@ -190,7 +191,7 @@ O script utiliza um mecanismo inteligente de resolução de parâmetros que pass
 ### Como Funciona
 
 1. **Network Stack** é criada primeiro (sem parâmetros, usa defaults)
-2. Seus outputs (`VpcId`, `PublicSubnetId`, `PublicSubnetIds`, `PrivateSubnetIds`) são capturados
+2. Seus outputs (`VpcId`, `PublicSubnetId`, `PublicSubnet2Id`, `PublicSubnetIds`, `PrivateSubnetIds`) são capturados
 3. **ALB Stack** recebe `VpcId` e `PublicSubnets` (lista de subnets públicas)
 4. **Security Stack** recebe `VpcId` como parâmetro (resolvido automaticamente)
 5. Seus outputs (`NodeJsEc2SecurityGroupId`, `GrafanaEc2SecurityGroupId`, `RdsSecurityGroupId`) são capturados
@@ -200,22 +201,36 @@ O script utiliza um mecanismo inteligente de resolução de parâmetros que pass
 7. **Compute Stack** recebe:
    - `GrafanaSecurityGroupId` e `NodeJsSecurityGroupId` (outputs da Security)
    - `GrafanaSubnetId` (PublicSubnetId da Network)
+   - `Frontend2SubnetId` (PublicSubnet2Id da Network, outra AZ)
    - `NodeJsSubnetId` (PrivateSubnet1Id extraído da Network)
-   - `TargetGroupArn` e `AlbSgId` (outputs da ALB Stack)
+   - `TargetGroupArn`, `AlbSgId` e `AlbDns` (outputs da ALB Stack)
+   - `GrafanaEipAllocationId`, `NodeEipAllocationId` e `Frontend2EipAllocationId` (outputs da stack de EIPs)
 
-### Registro do alvo no Target Group do ALB
+### Registro dos alvos no Target Group do ALB
 
 O CloudFormation **não possui** recurso para registrar um alvo que vive em outra stack
 (não existe `AWS::ElasticLoadBalancingV2::TargetGroupAttachment`; o `Targets` inline do
 Target Group exige o alvo na mesma stack).
 
 Por isso, ao concluir a stack `asset-sirius-compute`, o orquestrador chama
-`elbv2.register_targets` usando o output `TargetGroupArn` (stack ALB) e o output
-`GrafanaEc2InstanceId` (stack compute). Sem `Port`, o alvo passa a escutar na porta do
-próprio Target Group.
+`register_alb_targets`, que sincroniza dois Target Groups:
 
-A role IAM da Lambda precisa de `elasticloadbalancing:RegisterTargets` (a policy de
-exemplo abaixo já cobre com `elasticloadbalancing:*`).
+| Target Group | Porta | Alvos | Origem |
+|---|---|---|---|
+| `TargetGroupArn` (frontend) | 80 | Todas as instâncias que servem o frontend | output `FrontendEc2InstanceIds` (lista separada por vírgulas) |
+| `GrafanaTargetGroupArn` | 3000 | Apenas a instância que roda o Grafana | output `GrafanaEc2InstanceId` |
+
+Sem `Port`, o alvo passa a escutar na porta do próprio Target Group.
+
+A sincronização (`sync_target_group`) também **remove os alvos obsoletos**: se o
+CloudFormation recriar uma instância, o ID antigo continua registrado e o ALB
+passaria a mandar tráfego para uma instância inexistente (erros 502). Antes de
+registrar, o orquestrador consulta `describe_target_health`, desregistra o que não
+está mais na lista e registra o que falta.
+
+A role IAM da Lambda precisa de `elasticloadbalancing:RegisterTargets`,
+`elasticloadbalancing:DeregisterTargets` e `elasticloadbalancing:DescribeTargetHealth`
+(a policy de exemplo abaixo já cobre com `elasticloadbalancing:*`).
 
 ### Exemplo de Resolução
 
@@ -234,7 +249,7 @@ Quando a Storage stack é criada, o script:
 O script resolve automaticamente os parâmetros de cada stack usando os outputs das stacks anteriores:
 
 **Network** → Sem parâmetros (usa defaults)
-- Outputs: `VpcId`, `PublicSubnetId`, `PublicSubnetIds`, `PrivateSubnetIds`
+- Outputs: `VpcId`, `PublicSubnetId`, `PublicSubnet2Id`, `PublicSubnetIds`, `PrivateSubnetIds`
 
 **ALB** → Recebe automaticamente:
 - `VpcId` (do output da Network)
@@ -254,9 +269,10 @@ O script resolve automaticamente os parâmetros de cada stack usando os outputs 
 **Compute** → Recebe automaticamente:
 - `GrafanaSecurityGroupId` (do output da Security)
 - `GrafanaSubnetId` (PublicSubnetId da Network)
+- `Frontend2SubnetId` (PublicSubnet2Id da Network)
 - `NodeJsSecurityGroupId` (do output da Security)
 - `NodeJsSubnetId` (extraído como PrivateSubnet1Id do Network)
-- `TargetGroupArn` e `AlbSgId` (do output da ALB)
+- `TargetGroupArn`, `AlbSgId` e `AlbDns` (do output da ALB)
 
 ### Modificar Configuração das Stacks
 
@@ -359,6 +375,7 @@ aws cloudformation delete-stack --stack-name asset-sirius-security
 aws cloudformation delete-stack --stack-name asset-sirius-pipeline
 aws cloudformation delete-stack --stack-name asset-sirius-alb
 aws cloudformation delete-stack --stack-name asset-sirius-network
+aws cloudformation delete-stack --stack-name asset-sirius-eips
 ```
 
 ## Notas de Segurança

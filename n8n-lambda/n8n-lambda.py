@@ -61,19 +61,23 @@ STACKS_CONFIG = [
         'parameters': {
             'GrafanaSecurityGroupId': 'GrafanaEc2SecurityGroupId',  # Output da stack security
             'GrafanaSubnetId': 'PublicSubnetId',  # Output da stack network (subnet pública 1)
+            'Frontend2SubnetId': 'PublicSubnet2Id',  # Output da stack network (subnet pública 2, outra AZ)
             'NodeJsSecurityGroupId': 'NodeJsEc2SecurityGroupId',  # Output da stack security
             'NodeJsSubnetId': 'PrivateSubnet1Id',  # Extraído de PrivateSubnetIds da network
             'KeyName': 'testeKiteria',  # Key pair para acesso SSH às EC2
             # AllocationIds providos pela stack de EIPs criada dinamicamente
             'GrafanaEipAllocationId': 'GrafanaEipAllocationId',
             'NodeEipAllocationId': 'NodeEipAllocationId',
+            'Frontend2EipAllocationId': 'Frontend2EipAllocationId',
             # Outputs da stack do ALB (asset-sirius-alb)
             'TargetGroupArn': 'TargetGroupArn',
-            'AlbSgId': 'AlbSgId'
+            'AlbSgId': 'AlbSgId',
+            'AlbDns': 'AlbDns'  # DNS do ALB, usado pelo frontend para carregar o Grafana
         },
         'depends_on': ['asset-sirius-network', 'asset-sirius-security', 'asset-sirius-storage', 'asset-sirius-eips', 'asset-sirius-alb']
     }
 ]
+
 
 def get_template_from_s3(bucket, key):
     """
@@ -380,38 +384,100 @@ def wait_stack_update(stack_name, max_wait_time=3600):
         
         time.sleep(poll_interval)
 
-def register_alb_target(stack_outputs_map):
+def get_registered_target_ids(target_group_arn):
     """
-    Registra a instancia Grafana/Frontend como alvo do Target Group do ALB.
+    Retorna o conjunto de IDs de alvo atualmente registrados no Target Group.
+    """
+    target_ids = set()
+
+    try:
+        paginator = elbv2.get_paginator('describe_target_health')
+        for page in paginator.paginate(TargetGroupArn=target_group_arn):
+            for target in page.get('TargetHealthDescriptions', []):
+                target_id = target.get('Target', {}).get('Id')
+                if target_id:
+                    target_ids.add(target_id)
+    except ClientError as e:
+        print(f"Erro ao consultar os alvos do Target Group {target_group_arn}: {str(e)}")
+
+    return target_ids
+
+
+def sync_target_group(target_group_arn, desired_instance_ids):
+    """
+    Deixa o Target Group com exatamente os alvos desejados:
+    registra os que faltam e remove os obsoletos (instancia recriada pelo
+    CloudFormation, por exemplo).
+
+    Sem Port informado: o alvo passa a escutar na porta do proprio Target Group.
+    """
+    desired = [i for i in desired_instance_ids if i]
+
+    if not target_group_arn or not desired:
+        print(f"AVISO: Target Group {target_group_arn} sem alvos para registrar")
+        return False
+
+    try:
+        registered = get_registered_target_ids(target_group_arn)
+        stale = [i for i in registered if i not in desired]
+
+        if stale:
+            elbv2.deregister_targets(
+                TargetGroupArn=target_group_arn,
+                Targets=[{'Id': i} for i in stale]
+            )
+            print(f"  Alvos obsoletos removidos de {target_group_arn}: {stale}")
+
+        elbv2.register_targets(
+            TargetGroupArn=target_group_arn,
+            Targets=[{'Id': i} for i in desired]
+        )
+        print(f"✓ Alvos registrados em {target_group_arn}: {desired}")
+        return True
+    except ClientError as e:
+        print(f"Erro ao sincronizar os alvos do Target Group {target_group_arn}: {str(e)}")
+        return False
+
+
+def register_alb_targets(stack_outputs_map):
+    """
+    Registra as instancias do frontend como alvos do Target Group do ALB.
 
     O CloudFormation nao possui recurso para registrar um alvo que vive em
-    outra stack (o Target Group fica na stack asset-sirius-alb e a instancia na
+    outra stack (o Target Group fica na stack asset-sirius-alb e as instancias na
     stack asset-sirius-compute), entao o registro e feito aqui, no fim do
     ciclo de deploy, usando os outputs das duas stacks.
 
-    Sem Port informado: o alvo passa a escutar na porta do proprio Target Group.
+    - Target Group do frontend (porta 80): todas as instancias que servem o
+      frontend, para o ALB distribuir a carga entre elas.
+    - Target Group do Grafana (porta 3000): somente a instancia que roda o
+      Grafana, para que os dashboards nao divirjam entre instancias.
     """
     alb_outputs = stack_outputs_map.get('asset-sirius-alb', {})
     compute_outputs = stack_outputs_map.get('asset-sirius-compute', {})
 
-    target_group_arn = alb_outputs.get('TargetGroupArn')
-    instance_id = compute_outputs.get('GrafanaEc2InstanceId')
+    frontend_target_group = alb_outputs.get('TargetGroupArn')
+    grafana_target_group = alb_outputs.get('GrafanaTargetGroupArn')
 
-    if not target_group_arn or not instance_id:
-        print("AVISO: nao foi possivel registrar o alvo no Target Group do ALB "
-              "(TargetGroupArn ou GrafanaEc2InstanceId ausente)")
+    frontend_instances = [
+        i for i in compute_outputs.get('FrontendEc2InstanceIds', '').split(',') if i
+    ]
+    grafana_instances = [compute_outputs.get('GrafanaEc2InstanceId')]
+
+    if not frontend_target_group or not frontend_instances:
+        print("AVISO: nao foi possivel registrar os alvos no Target Group do ALB "
+              "(TargetGroupArn ou FrontendEc2InstanceIds ausente)")
         return False
 
-    try:
-        elbv2.register_targets(
-            TargetGroupArn=target_group_arn,
-            Targets=[{'Id': instance_id}]
-        )
-        print(f"✓ Instancia {instance_id} registrada no Target Group {target_group_arn}")
-        return True
-    except ClientError as e:
-        print(f"Erro ao registrar o alvo no Target Group do ALB: {str(e)}")
-        return False
+    success = sync_target_group(frontend_target_group, frontend_instances)
+
+    if grafana_target_group and grafana_instances[0]:
+        sync_target_group(grafana_target_group, grafana_instances)
+    else:
+        print("AVISO: GrafanaTargetGroupArn ou GrafanaEc2InstanceId ausente "
+              "(o Grafana nao foi registrado no Target Group)")
+
+    return success
 
 def lambda_handler(event, context):
     """
@@ -465,10 +531,10 @@ def lambda_handler(event, context):
             if success:
                 results['successful'].append(stack_name)
 
-                # Fecha o ciclo do ALB: registra a instancia do frontend como
-                # alvo do Target Group (nao existe recurso CFN para isso).
+                # Fecha o ciclo do ALB: registra as instancias do frontend como
+                # alvos do Target Group (nao existe recurso CFN para isso).
                 if stack_name == 'asset-sirius-compute':
-                    register_alb_target(stack_outputs_map)
+                    register_alb_targets(stack_outputs_map)
             else:
                 results['failed'].append(stack_name)
                 print(f"\n✗ FALHA: Stack {stack_name} não foi criada com sucesso")

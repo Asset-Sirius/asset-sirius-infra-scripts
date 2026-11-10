@@ -210,6 +210,10 @@ Outputs:
     Description: ID da subnet pública
     Value: !Ref PublicSubnet1
 
+  PublicSubnet2Id:
+    Description: ID da subnet pública 2 (outra AZ, usada pela 2a instância do frontend)
+    Value: !Ref PublicSubnet2
+
   PublicSubnetIds:
     Description: IDs das subnets públicas (usadas pelo ALB)
     Value: !Join
