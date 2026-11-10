@@ -81,6 +81,28 @@ Parameters:
     Type: String
     Description: "AllocationId do Elastic IP reservado para Node.js (ex: eipalloc-89abcdef)"
 
+  # ---------------------------
+  # Load Balancer (stack asset-sirius-alb)
+  # ---------------------------
+
+  TargetGroupArn:
+    Type: String
+    Description: >-
+      ARN do Target Group do ALB (output TargetGroupArn da stack asset-sirius-alb).
+      O registro da instancia como alvo do Target Group e feito pelo orquestrador
+      (n8n-lambda.py), pois o CloudFormation nao possui recurso para registrar
+      um alvo que vive em outra stack.
+
+  AlbSgId:
+    Type: String
+    Description: >-
+      ID do Security Group do ALB (output AlbSgId da stack asset-sirius-alb)
+
+  AppPort:
+    Type: Number
+    Default: 80
+    Description: Porta da aplicacao frontend na EC2 (porta alvo do ALB)
+
 Resources:
   Ec2DefaultInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -160,6 +182,9 @@ Resources:
       Tags:
         - Key: Name
           Value: asset-sirius-ec2-grafana
+        # Rastreabilidade do alvo do ALB (o registro e feito pelo orquestrador)
+        - Key: TargetGroupArn
+          Value: !Ref TargetGroupArn
       # Script de startup (UserData) - instalação básica do Grafana em Ubuntu
       UserData: !Base64 |
         #!/bin/bash
@@ -262,6 +287,21 @@ Resources:
         docker compose -f /opt/grafana-compose.yml up -d
 
         # Note: Athena plugin requires AWS credentials. Prefer an IAM Role attached to the EC2 instance (Instance Profile).
+
+  # ---------------------------
+  # Load Balancer (ALB)
+  # ---------------------------
+
+  # O frontend so aceita trafego vindo do Security Group do ALB.
+  # A regra de 0.0.0.0/0 na porta do frontend foi removida da stack de security.
+  FrontendAlbSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref GrafanaSecurityGroupId
+      IpProtocol: tcp
+      FromPort: !Ref AppPort
+      ToPort: !Ref AppPort
+      SourceSecurityGroupId: !Ref AlbSgId
 
   # EBS volume for Grafana data (persist /var/lib/grafana via bind-mount)
   GrafanaEbsVolume:

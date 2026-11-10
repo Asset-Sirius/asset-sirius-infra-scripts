@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  ALB stack - Application Load Balancer (internet-facing) para a aplicacao
+  frontend (porta 80). O Target Group e apontado pelas instancias criadas na
+  stack de compute. This template is deployed before compute.yaml.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: ID da VPC onde o ALB e o Target Group serao criados
+
+  PublicSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >-
+      IDs das subnets publicas (minimo 2, em AZs diferentes) onde o ALB
+      serao criado.
+
+  AppPort:
+    Type: Number
+    Default: 80
+    Description: Porta da aplicacao frontend nas instancias (porta do Target Group)
+
+  HealthCheckPath:
+    Type: String
+    Default: /
+    Description: Caminho HTTP usado no health check do Target Group
+
+Resources:
+  # ---------------------------
+  # Security Group - ALB
+  # ---------------------------
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group do ALB (asset-sirius)
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Entrada publica HTTP
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        # Saida para as instancias (porta AppPort) e para a internet
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: asset-sirius-sg-alb
+
+  # ---------------------------
+  # Target Group (instancias do compute)
+  # ---------------------------
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Port: !Ref AppPort
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckPath: !Ref HealthCheckPath
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: !Ref AppPort
+      Tags:
+        - Key: Name
+          Value: asset-sirius-alb-target-group
+
+  # ---------------------------
+  # Load Balancer
+  # ---------------------------
+
+  AlbLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: asset-sirius-alb
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      Subnets: !Ref PublicSubnets
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: asset-sirius-alb
+
+  # ---------------------------
+  # Listener 80 -> Target Group
+  # ---------------------------
+
+  AlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref AlbLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+Outputs:
+  TargetGroupArn:
+    Description: ARN do Target Group do ALB (parametro da stack de compute)
+    Value: !Ref AlbTargetGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-TargetGroupArn'
+
+  AlbSgId:
+    Description: ID do Security Group do ALB (parametro da stack de compute)
+    Value: !Ref AlbSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-AlbSgId'
+
+  AlbDns:
+    Description: DNS name publico do ALB (ponto de entrada da aplicacao)
+    Value: !GetAtt AlbLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-AlbDns'

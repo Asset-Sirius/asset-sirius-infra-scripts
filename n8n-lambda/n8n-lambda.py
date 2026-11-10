@@ -6,6 +6,7 @@ from botocore.exceptions import ClientError
 
 cloudformation = boto3.client('cloudformation')
 s3 = boto3.client('s3')
+elbv2 = boto3.client('elbv2')
 
 # Configuração das stacks CloudFormation na ordem de criação
 STACKS_CONFIG = [
@@ -14,6 +15,15 @@ STACKS_CONFIG = [
         'template': 'network.yaml',
         'parameters': {},  # Parâmetros já definidos no template
         'depends_on': []
+    },
+    {
+        'name': 'asset-sirius-alb',
+        'template': 'alb.yaml',
+        'parameters': {
+            'VpcId': 'VpcId',  # Output da stack network
+            'PublicSubnets': 'PublicSubnetIds'  # Output da stack network (subnets publicas)
+        },
+        'depends_on': ['asset-sirius-network']
     },
     {
         'name': 'asset-sirius-pipeline',
@@ -56,9 +66,12 @@ STACKS_CONFIG = [
             'KeyName': 'testeKiteria',  # Key pair para acesso SSH às EC2
             # AllocationIds providos pela stack de EIPs criada dinamicamente
             'GrafanaEipAllocationId': 'GrafanaEipAllocationId',
-            'NodeEipAllocationId': 'NodeEipAllocationId'
+            'NodeEipAllocationId': 'NodeEipAllocationId',
+            # Outputs da stack do ALB (asset-sirius-alb)
+            'TargetGroupArn': 'TargetGroupArn',
+            'AlbSgId': 'AlbSgId'
         },
-        'depends_on': ['asset-sirius-network', 'asset-sirius-security', 'asset-sirius-storage', 'asset-sirius-eips']
+        'depends_on': ['asset-sirius-network', 'asset-sirius-security', 'asset-sirius-storage', 'asset-sirius-eips', 'asset-sirius-alb']
     }
 ]
 
@@ -67,6 +80,7 @@ def get_template_from_s3(bucket, key):
     Recupera o template CloudFormation do S3
     """
     try:
+
         response = s3.get_object(Bucket=bucket, Key=key)
         template_body = response['Body'].read().decode('utf-8')
         return template_body
@@ -366,6 +380,39 @@ def wait_stack_update(stack_name, max_wait_time=3600):
         
         time.sleep(poll_interval)
 
+def register_alb_target(stack_outputs_map):
+    """
+    Registra a instancia Grafana/Frontend como alvo do Target Group do ALB.
+
+    O CloudFormation nao possui recurso para registrar um alvo que vive em
+    outra stack (o Target Group fica na stack asset-sirius-alb e a instancia na
+    stack asset-sirius-compute), entao o registro e feito aqui, no fim do
+    ciclo de deploy, usando os outputs das duas stacks.
+
+    Sem Port informado: o alvo passa a escutar na porta do proprio Target Group.
+    """
+    alb_outputs = stack_outputs_map.get('asset-sirius-alb', {})
+    compute_outputs = stack_outputs_map.get('asset-sirius-compute', {})
+
+    target_group_arn = alb_outputs.get('TargetGroupArn')
+    instance_id = compute_outputs.get('GrafanaEc2InstanceId')
+
+    if not target_group_arn or not instance_id:
+        print("AVISO: nao foi possivel registrar o alvo no Target Group do ALB "
+              "(TargetGroupArn ou GrafanaEc2InstanceId ausente)")
+        return False
+
+    try:
+        elbv2.register_targets(
+            TargetGroupArn=target_group_arn,
+            Targets=[{'Id': instance_id}]
+        )
+        print(f"✓ Instancia {instance_id} registrada no Target Group {target_group_arn}")
+        return True
+    except ClientError as e:
+        print(f"Erro ao registrar o alvo no Target Group do ALB: {str(e)}")
+        return False
+
 def lambda_handler(event, context):
     """
     Manipulador principal do Lambda
@@ -417,6 +464,11 @@ def lambda_handler(event, context):
             
             if success:
                 results['successful'].append(stack_name)
+
+                # Fecha o ciclo do ALB: registra a instancia do frontend como
+                # alvo do Target Group (nao existe recurso CFN para isso).
+                if stack_name == 'asset-sirius-compute':
+                    register_alb_target(stack_outputs_map)
             else:
                 results['failed'].append(stack_name)
                 print(f"\n✗ FALHA: Stack {stack_name} não foi criada com sucesso")

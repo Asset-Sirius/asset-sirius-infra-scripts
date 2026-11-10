@@ -100,10 +100,9 @@ Resources:
           ToPort: !Ref GrafanaPort
           CidrIp: !Ref GrafanaAccessCidr
         # Porta do frontend (servindo os painéis embutidos)
-        - IpProtocol: tcp
-          FromPort: !Ref FrontendPort
-          ToPort: !Ref FrontendPort
-          CidrIp: !Ref GrafanaAccessCidr
+        # Sem acesso direto: o trafego HTTP chega apenas pelo ALB.
+        # A regra de entrada do ALB (SourceSecurityGroupId = AlbSgId) e criada
+        # na stack de compute, que recebe o AlbSgId como parametro.
       SecurityGroupEgress:
         - IpProtocol: -1
           FromPort: 0
@@ -116,6 +115,7 @@ Resources:
   # ---------------------------
   # Security Group - RDS MySQL
   # ---------------------------
+
 
   RdsSecurityGroup:
     Type: AWS::EC2::SecurityGroup

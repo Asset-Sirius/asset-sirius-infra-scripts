@@ -5,10 +5,11 @@ Script Python para Lambda que orquestra a criação de toda a infraestrutura AWS
 
 ## Ordem de Criação (Garantida)
 1. **Network** - VPC, Subnets, Internet Gateway, NAT Gateway, Route Tables
-2. **Pipeline** - Recursos de pipeline (CodePipeline, CodeBuild, etc)
-3. **Security** - Security Groups, IAM Roles, Policies
-4. **Storage** - S3 Buckets, DynamoDB, etc
-5. **Compute** - EC2, Lambda, ECS, etc
+2. **ALB** - Application Load Balancer, SG do ALB e Target Group do frontend
+3. **Pipeline** - Recursos de pipeline (CodePipeline, CodeBuild, etc)
+4. **Security** - Security Groups, IAM Roles, Policies
+5. **Storage** - S3 Buckets, DynamoDB, etc
+6. **Compute** - EC2, Lambda, ECS, etc
 
 ## Características Principais
 ✓ Criação sequencial garantida - cada stack espera a anterior terminar  
@@ -26,7 +27,8 @@ Os templates devem estar nos locais corretos e definir outputs apropriados:
 
 | Stack | Template | Outputs Obrigatórios |
 |-------|----------|----------------------|
-| Network | `network.yaml` | `VpcId`, `PublicSubnetId`, `PrivateSubnetIds` |
+| Network | `network.yaml` | `VpcId`, `PublicSubnetId`, `PublicSubnetIds`, `PrivateSubnetIds` |
+| ALB | `alb.yaml` | `TargetGroupArn`, `AlbSgId`, `AlbDns` |
 | Pipeline | `pipeline.yaml` | (nenhum obrigatório) |
 | Security | `security.yaml` | `NodeJsEc2SecurityGroupId`, `GrafanaEc2SecurityGroupId`, `RdsSecurityGroupId` |
 | Storage | `storage.yaml` | (nenhum obrigatório) |
@@ -82,16 +84,18 @@ A função Lambda precisa de uma IAM Role com as seguintes permissões:
       ],
       "Resource": "*"
     },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ec2:*",
-        "rds:*",
-        "lambda:*",
-        "logs:*"
-      ],
-      "Resource": "*"
-    }
+      {
+        "Effect": "Allow",
+        "Action": [
+          "ec2:*",
+          "rds:*",
+          "lambda:*",
+          "logs:*",
+          "elasticloadbalancing:*"
+        ],
+        "Resource": "*"
+      }
+
   ]
 }
 ```
@@ -150,6 +154,7 @@ aws lambda invoke \
   "body": {
     "successful": [
       "asset-sirius-network",
+      "asset-sirius-alb",
       "asset-sirius-pipeline",
       "asset-sirius-security",
       "asset-sirius-storage",
@@ -185,16 +190,32 @@ O script utiliza um mecanismo inteligente de resolução de parâmetros que pass
 ### Como Funciona
 
 1. **Network Stack** é criada primeiro (sem parâmetros, usa defaults)
-2. Seus outputs (`VpcId`, `PublicSubnetId`, `PrivateSubnetIds`) são capturados
-3. **Security Stack** recebe `VpcId` como parâmetro (resolvido automaticamente)
-4. Seus outputs (`NodeJsEc2SecurityGroupId`, `GrafanaEc2SecurityGroupId`, `RdsSecurityGroupId`) são capturados
-5. **Storage Stack** recebe:
+2. Seus outputs (`VpcId`, `PublicSubnetId`, `PublicSubnetIds`, `PrivateSubnetIds`) são capturados
+3. **ALB Stack** recebe `VpcId` e `PublicSubnets` (lista de subnets públicas)
+4. **Security Stack** recebe `VpcId` como parâmetro (resolvido automaticamente)
+5. Seus outputs (`NodeJsEc2SecurityGroupId`, `GrafanaEc2SecurityGroupId`, `RdsSecurityGroupId`) são capturados
+6. **Storage Stack** recebe:
    - `PrivateSubnet2Id` e `PrivateSubnet3Id` (extraídos de `PrivateSubnetIds` da Network)
    - `RdsSecurityGroupId` (output da Security)
-6. **Compute Stack** recebe:
+7. **Compute Stack** recebe:
    - `GrafanaSecurityGroupId` e `NodeJsSecurityGroupId` (outputs da Security)
    - `GrafanaSubnetId` (PublicSubnetId da Network)
    - `NodeJsSubnetId` (PrivateSubnet1Id extraído da Network)
+   - `TargetGroupArn` e `AlbSgId` (outputs da ALB Stack)
+
+### Registro do alvo no Target Group do ALB
+
+O CloudFormation **não possui** recurso para registrar um alvo que vive em outra stack
+(não existe `AWS::ElasticLoadBalancingV2::TargetGroupAttachment`; o `Targets` inline do
+Target Group exige o alvo na mesma stack).
+
+Por isso, ao concluir a stack `asset-sirius-compute`, o orquestrador chama
+`elbv2.register_targets` usando o output `TargetGroupArn` (stack ALB) e o output
+`GrafanaEc2InstanceId` (stack compute). Sem `Port`, o alvo passa a escutar na porta do
+próprio Target Group.
+
+A role IAM da Lambda precisa de `elasticloadbalancing:RegisterTargets` (a policy de
+exemplo abaixo já cobre com `elasticloadbalancing:*`).
 
 ### Exemplo de Resolução
 
@@ -213,7 +234,11 @@ Quando a Storage stack é criada, o script:
 O script resolve automaticamente os parâmetros de cada stack usando os outputs das stacks anteriores:
 
 **Network** → Sem parâmetros (usa defaults)
-- Outputs: `VpcId`, `PublicSubnetId`, `PrivateSubnetIds`
+- Outputs: `VpcId`, `PublicSubnetId`, `PublicSubnetIds`, `PrivateSubnetIds`
+
+**ALB** → Recebe automaticamente:
+- `VpcId` (do output da Network)
+- `PublicSubnets` (do output PublicSubnetIds da Network)
 
 **Pipeline** → Sem parâmetros (usa defaults)
 - Outputs: depende do seu template
@@ -231,6 +256,7 @@ O script resolve automaticamente os parâmetros de cada stack usando os outputs 
 - `GrafanaSubnetId` (PublicSubnetId da Network)
 - `NodeJsSecurityGroupId` (do output da Security)
 - `NodeJsSubnetId` (extraído como PrivateSubnet1Id do Network)
+- `TargetGroupArn` e `AlbSgId` (do output da ALB)
 
 ### Modificar Configuração das Stacks
 
@@ -331,6 +357,7 @@ aws cloudformation delete-stack --stack-name asset-sirius-compute
 aws cloudformation delete-stack --stack-name asset-sirius-storage
 aws cloudformation delete-stack --stack-name asset-sirius-security
 aws cloudformation delete-stack --stack-name asset-sirius-pipeline
+aws cloudformation delete-stack --stack-name asset-sirius-alb
 aws cloudformation delete-stack --stack-name asset-sirius-network
 ```
 

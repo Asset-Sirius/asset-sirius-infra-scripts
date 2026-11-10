@@ -28,7 +28,7 @@ Resources:
 
 Outputs:
   NodeEipAllocationId:
-    Description: AllocationId do EIP reservado para Node.js (ex: eipalloc-01234567)
+    Description: "AllocationId do EIP reservado para Node.js (ex: eipalloc-01234567)"
     Value: !GetAtt NodeJsEip.AllocationId
 
   NodeEipPublicIp:
@@ -36,7 +36,7 @@ Outputs:
     Value: !Ref NodeJsEip
 
   GrafanaEipAllocationId:
-    Description: AllocationId do EIP reservado para Grafana (ex: eipalloc-89abcdef)
+    Description: "AllocationId do EIP reservado para Grafana (ex: eipalloc-89abcdef)"
     Value: !GetAtt GrafanaEip.AllocationId
 
   GrafanaEipPublicIp:

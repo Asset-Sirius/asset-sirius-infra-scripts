@@ -14,6 +14,11 @@ Parameters:
     Default: 10.0.0.0/24
     Description: CIDR da Subnet Pública 1
 
+  PublicSubnet2Cidr:
+    Type: String
+    Default: 10.0.4.0/24
+    Description: CIDR da Subnet Pública 2
+
   PrivateSubnet1Cidr:
     Type: String
     Default: 10.0.1.0/24
@@ -64,6 +69,18 @@ Resources:
       Tags:
         - Key: Name
           Value: asset-sirius-subnet-public-1
+
+  # Subnet Pública 2 (usada pelo ALB, em outra AZ)
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2Cidr
+      AvailabilityZone: us-east-1b
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: asset-sirius-subnet-public-2
 
   # Subnets Privadas
   PrivateSubnet1:
@@ -142,6 +159,13 @@ Resources:
       SubnetId: !Ref PublicSubnet1
       RouteTableId: !Ref PublicRouteTable
 
+  # Associação da subnet pública 2 (AZ do ALB) com a route table pública
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
   # Route Table Privada (rota para Internet via NAT Gateway)
   PrivateRouteTable:
     Type: AWS::EC2::RouteTable
@@ -185,6 +209,13 @@ Outputs:
   PublicSubnetId:
     Description: ID da subnet pública
     Value: !Ref PublicSubnet1
+
+  PublicSubnetIds:
+    Description: IDs das subnets públicas (usadas pelo ALB)
+    Value: !Join
+      - ","
+      - - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
 
   PrivateSubnetIds:
     Description: IDs das subnets privadas

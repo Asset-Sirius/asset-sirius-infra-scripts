@@ -5,32 +5,40 @@ Explica a função e dependências dos diretórios script_cloudformation e n8n-l
 - O que é: coleção de templates CloudFormation separados por responsabilidade.
 - Principais templates:
   - network.yaml — VPC, subnets, IGW, NAT, route tables.
-    - Outputs obrigatórios: VpcId, PublicSubnetId, PrivateSubnetIds (vírgula-separated).
+    - Outputs obrigatórios: VpcId, PublicSubnetId, PrivateSubnetIds (vírgula-separated), PublicSubnetIds (vírgula-separated, subnets públicas do ALB).
   - eips.yaml — reserva EIPs e exporta AllocationIds/PublicIps.
   - pipeline.yaml — Lambdas e Glue.
+  - alb.yaml — ALB internet-facing (porta 80), SG do ALB e Target Group da aplicação frontend.
+    - Depende de: Network (VpcId, PublicSubnetIds).
+    - Outputs: TargetGroupArn, AlbSgId, AlbDns (com Export ${AWS::StackName}-...).
   - security.yaml — Security Groups (NodeJs, Grafana, RDS).
     - Outputs: NodeJsEc2SecurityGroupId, GrafanaEc2SecurityGroupId, RdsSecurityGroupId.
+    - A porta do frontend (80) não é liberada aqui: o acesso direto é bloqueado e a entrada passa a vir do SG do ALB (regra criada em compute.yaml).
   - storage.yaml — S3 buckets (bronze/silver/gold) e RDS MySQL.
     - Depende de: PrivateSubnet2Id, PrivateSubnet3Id (extraídos de PrivateSubnetIds) e RdsSecurityGroupId.
     - Outputs: nomes de buckets e endpoint/porta do RDS.
   - crawler.yaml — Glue Crawler que varre s3://asset-sirius-gold/cvm/.
   - compute.yaml — EC2 Node.js e Grafana, EBS volume, associa EIPs.
-    - Depende de: Security (SGs), Network (subnets), EIPs (AllocationIds).
-  - deploy.yaml — cria bucket infra e placeholder Lambda (uso opcional).
+    - Depende de: Security (SGs), Network (subnets), EIPs (AllocationIds), ALB (TargetGroupArn, AlbSgId).
+    - A entrada HTTP da instância Grafana/Frontend vem só do SG do ALB (ingress em compute.yaml).
+    - O registro da instância como alvo do Target Group é feito pelo orquestrador (n8n-lambda.py): o CloudFormation não tem recurso para registrar alvo de outra stack.
+- deploy.yaml — cria bucket infra e placeholder Lambda (uso opcional).
 - Ordem de deploy (usada pelo orquestrador):
   1. asset-sirius-eips (eips.yaml)
   2. asset-sirius-network (network.yaml)
-  3. asset-sirius-pipeline (pipeline.yaml)
-  4. asset-sirius-security (security.yaml)
-  5. asset-sirius-storage (storage.yaml)
-  6. asset-sirius-crawler (crawler.yaml)
-  7. asset-sirius-compute (compute.yaml)
+  3. asset-sirius-alb (alb.yaml)
+  4. asset-sirius-pipeline (pipeline.yaml)
+  5. asset-sirius-security (security.yaml)
+  6. asset-sirius-storage (storage.yaml)
+  7. asset-sirius-crawler (crawler.yaml)
+  8. asset-sirius-compute (compute.yaml)
 - Como os parâmetros são passados:
   - Orquestrador (Lambda) lê outputs da stack anterior e passa como parâmetros à próxima.
   - PrivateSubnetIds é splitado por vírgula para gerar PrivateSubnet1/2/3.
 - Dicas rápidas:
   - Garanta o bucket S3 com templates antes de executar.
   - Verifique/ajuste KeyName, AMI, roles e ARNs antes do deploy.
+  - Valide os templates com `cfn-lint script_cloudformation/*.yaml` antes do deploy.
   - Teste em conta/região de dev antes de rodar em produção.
 
 2) n8n-lambda — propósito e como usar
