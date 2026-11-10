@@ -228,9 +228,105 @@ passaria a mandar tráfego para uma instância inexistente (erros 502). Antes de
 registrar, o orquestrador consulta `describe_target_health`, desregistra o que não
 está mais na lista e registra o que falta.
 
+> `describe_target_health` **não é uma operação paginada** na API do ELBv2 —
+> chamá-la via `get_paginator()` levanta `Operation cannot be paginated` e
+> aborta a execução antes do registro. A chamada é feita direto.
+
 A role IAM da Lambda precisa de `elasticloadbalancing:RegisterTargets`,
 `elasticloadbalancing:DeregisterTargets` e `elasticloadbalancing:DescribeTargetHealth`
 (a policy de exemplo abaixo já cobre com `elasticloadbalancing:*`).
+
+### Logs e rastreabilidade
+
+Cada linha de log sai no formato `timestamp [NÍVEL] mensagem | chave=valor`, com
+timestamp UTC e `flush=True` (a linha é gravada no CloudWatch mesmo se a Lambda
+for encerrada por timeout no meio da execução).
+
+| Nível | Significado |
+|---|---|
+| `INFO` | fluxo normal: status de cada stack, parâmetros resolvidos, outputs, alvos registrados |
+| `WARN` | a stack já existia e foi atualizada, ou o Grafana não foi registrado |
+| `ERROR` | falha: stack em rollback, dado ausente para o registro, permissão negada, tempo insuficiente |
+
+Linhas para rastrear o registro dos alvos do ALB:
+
+```
+[INFO] parametro resolvido | stack=asset-sirius-compute parametro=TargetGroupArn valor=arn:... origem=output asset-sirius-alb.TargetGroupArn
+[INFO] outputs da stack | stack=asset-sirius-compute outputs={"GrafanaEc2InstanceId": "i-...", "FrontendEc2InstanceIds": "i-...,i-..."}
+[INFO] registro dos alvos do ALB | tg_frontend=arn:... tg_grafana=arn:... instancias_frontend=[...] instancias_grafana=[...]
+[INFO] alvos atualmente registrados | target_group=arn:... alvos=[]
+[INFO] alvos registrados no Target Group | target_group=arn:... alvos=['i-...', 'i-...']
+```
+
+Se aparecer `[ERROR] FrontendEc2InstanceIds ausente nos outputs da stack asset-sirius-compute`
+ou `[ERROR] TargetGroupArn do frontend ausente nos outputs da stack asset-sirius-alb`,
+o log mostra **qual** dos dois dados faltou e quais outputs estavam disponíveis.
+
+Para ver os logs da função (o nome da função no workflow n8n é `asset-sirius-infra`):
+
+```bash
+aws logs tail /aws/lambda/asset-sirius-infra --since 1h --follow --region us-east-1
+```
+
+### Timeout da Lambda e retomada (auto-continuação)
+
+A Lambda tem limite máximo de 900s (15 min) e a orquestração das 8 stacks
+**não cabe nesse tempo**: numa criação do zero, o tempo medido foi
+
+| Stack | Tempo |
+|---|---|
+| eips | ~30s |
+| network | ~120s (NAT Gateway) |
+| alb | ~150s |
+| pipeline | ~20s |
+| security | ~30s |
+| **storage** | **~490s (RDS)** — e só isso |
+| crawler + compute | ~150s+ |
+
+Por isso o handler é **auto-contínuo**: cada execução avança até onde o tempo
+permite e **reagenda a si mesma** (`lambda:InvokeFunction` com
+`InvocationType=Event`) para continuar a partir dali. O stack `tentativa` no
+payload conta as continuações, com limite de 12 (`MAX_TENTATIVAS`).
+
+Com isso:
+- Stack que ficou em `CREATE_IN_PROGRESS` é apenas **aguardada** na execução
+  seguinte — o `update_stack` não é reenviado (o CFN rejeita update em stack
+  em andamento com *"can not be updated"*);
+- Stacks já atualizadas retornam rápido ("No updates are to be performed");
+- A execução para de forma limpa (sem ser morta no meio de um update) quando o
+  tempo acaba, e registra `"interrupted": true` / `"reagendado": true`;
+- O registro dos alvos do ALB acontece **após** o laço de stacks (e não dentro
+  dele), para que uma stack intermediária com falha não impeça o registro;
+- Se o registro falhar, a Lambda responde **HTTP 500** e o motivo vai para o
+  log. Antes, o retorno era ignorado e a Lambda respondia 200 mesmo com o
+  Target Group vazio (ALB respondendo 503 sem nenhum rastro).
+
+A role IAM precisa de `lambda:InvokeFunction` na própria função (a policy de
+exemplo abaixo já cobre com `lambda:*`).
+
+### Retry com backoff
+
+Chamadas de API subjectas a throttling (`Rate exceeded`) são repetidas com
+backoff exponencial (2s, 4s, 8s... até 60s, 6 tentativas). Isso vale para
+`CreateStack`, `UpdateStack`, `RegisterTargets` e `DeregisterTargets`.
+
+Antes o `CreateStack` era disparado para toda stack e o `AlreadyExistsException`
+era tratado como erro — o que gerava um `Rate exceeded` no meio da orquestração
+(com 4 retries internos do botocore esgotados). Agora o estado da stack é
+consultado antes (`describe_stacks`) e só a operação necessária é disparada.
+
+### Testes
+
+Os testes usam o `boto3` mockado e não tocam na AWS:
+
+```bash
+python n8n-lambda/test_n8n_lambda.py
+```
+
+Cobrem: registro dos alvos, retomada com stack em andamento, retry de
+throttling, auto-continuação por falta de tempo, diagnóstico do dado ausente e
+limite de continuações.
+
 
 ### Exemplo de Resolução
 
@@ -311,9 +407,9 @@ STACKS_CONFIG = [
 ## Monitoramento
 
 ### CloudWatch Logs
-A função Lambda registra logs detalhados:
+A função registra o log a cada linha (timestamp, nível, mensagem e campos).
 ```bash
-aws logs tail /aws/lambda/asset-sirius-orchestrator --follow
+aws logs tail /aws/lambda/asset-sirius-infra --follow --region us-east-1
 ```
 
 ### Verificar Status de Stacks

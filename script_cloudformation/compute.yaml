@@ -303,6 +303,8 @@ Resources:
                 # Grafana publicado pelo ALB na porta 3000 (sem IP público hardcoded).
                 # Adicionar http:// para evitar caminho relativo no iframe
                 - VITE_GRAFANA_HOST=http://${AlbDns}:3000
+                # Diferenciador logico da instancia (frontend em runtime)
+                - VITE_INSTANCE_ID=asset-sirius-ec2-grafana
               restart: always
 
         
@@ -384,6 +386,8 @@ Resources:
                 - VITE_BACKEND_PORT=8080
                 # Grafana publicado pelo ALB na porta 3000 (sem IP publico hardcoded)
                 - VITE_GRAFANA_HOST=http://${AlbDns}:3000
+                # Diferenciador logico da instancia (frontend em runtime)
+                - VITE_INSTANCE_ID=asset-sirius-ec2-frontend-2
               restart: always
           EOF
 
